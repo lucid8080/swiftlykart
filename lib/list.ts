@@ -55,9 +55,10 @@ export async function resolveCurrentList() {
         },
       });
       if (list) return list;
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Fallback if productVariant relation doesn't exist (migration not applied)
-      if (error?.code === 'P2009' || error?.message?.includes('productVariant')) {
+      const prismaError = error as { code?: string; message?: string };
+      if (prismaError?.code === 'P2009' || prismaError?.message?.includes('productVariant')) {
         const list = await prisma.list.findFirst({
           where: { id: pinListId, isArchived: false },
           include: {
@@ -110,9 +111,10 @@ export async function resolveCurrentList() {
           },
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Fallback if productVariant relation doesn't exist (migration not applied)
-      if (error?.code === 'P2009' || error?.message?.includes('productVariant')) {
+      const prismaError = error as { code?: string; message?: string };
+      if (prismaError?.code === 'P2009' || prismaError?.message?.includes('productVariant')) {
         list = await prisma.list.findFirst({
           where: { ownerUserId: userId, isArchived: false },
           include: {
@@ -165,9 +167,10 @@ export async function resolveCurrentList() {
             },
           },
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         // Fallback if productVariant relation doesn't exist
-        if (error?.code === 'P2009' || error?.message?.includes('productVariant')) {
+        const prismaError = error as { code?: string; message?: string };
+        if (prismaError?.code === 'P2009' || prismaError?.message?.includes('productVariant')) {
           list = await prisma.list.create({
             data: {
               name: "My Groceries",
@@ -241,9 +244,10 @@ export async function resolveCurrentList() {
           },
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Fallback if productVariant relation doesn't exist (migration not applied)
-      if (error?.code === 'P2009' || error?.message?.includes('productVariant')) {
+      const prismaError = error as { code?: string; message?: string };
+      if (prismaError?.code === 'P2009' || prismaError?.message?.includes('productVariant')) {
         list = await prisma.list.findFirst({
           where: { ownerDeviceId: device.id, isArchived: false },
           include: {
@@ -295,9 +299,10 @@ export async function resolveCurrentList() {
             },
           },
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         // Fallback if productVariant relation doesn't exist
-        if (error?.code === 'P2009' || error?.message?.includes('productVariant')) {
+        const prismaError = error as { code?: string; message?: string };
+        if (prismaError?.code === 'P2009' || prismaError?.message?.includes('productVariant')) {
           list = await prisma.list.create({
             data: {
               name: "My Groceries",
@@ -456,9 +461,10 @@ export async function toggleListItem(
       });
       return { active: true };
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     // If productVariantId field doesn't exist (migration not applied), fall back to old behavior
-    if (error?.code === 'P2009' || error?.message?.includes('Unknown column') || error?.message?.includes('productVariantId')) {
+    const prismaError = error as { code?: string; message?: string };
+    if (prismaError?.code === 'P2009' || prismaError?.message?.includes('Unknown column') || prismaError?.message?.includes('productVariantId')) {
       // Fallback to old constraint (without productVariantId)
       const existingItem = await prisma.listItem.findUnique({
         where: {

@@ -111,7 +111,7 @@ export function RecommendationsDisplay({
                     Items without store information
                   </h3>
                   <p className="text-sm text-muted-foreground mb-3">
-                    We couldn't find store information for these items. Try checking multiple
+                    We couldn&apos;t find store information for these items. Try checking multiple
                     stores or ask store staff.
                   </p>
                   <ul className="space-y-2">
