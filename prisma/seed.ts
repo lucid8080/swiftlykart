@@ -273,7 +273,7 @@ async function main() {
     { name: "T&T Supermarket", logo: null },
   ];
 
-  const createdStores = [];
+  const createdStores: Array<{ id: string; name: string; logo: string | null; createdAt: Date; updatedAt: Date }> = [];
   for (const storeData of canadianStores) {
     const store = await prisma.store.create({
       data: {

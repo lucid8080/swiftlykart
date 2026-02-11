@@ -6,6 +6,8 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
+type StoreSelect = { id: string; name: string; logo: string | null };
+
 /**
  * GET /api/items/[id]/variants
  * Returns all stores and product variants for a specific grocery item
@@ -57,7 +59,7 @@ export async function GET(
     }
 
     // Check if Store table exists by trying to query it
-    let stores: Array<{ id: string; name: string; logo: string | null }> = [];
+    let stores: StoreSelect[] = [];
     try {
       stores = await prisma.store.findMany({
         orderBy: { name: "asc" },
@@ -104,11 +106,10 @@ export async function GET(
         { name: "T&T Supermarket", logo: null },
       ];
 
-      type StoreType = { id: string; name: string; logo: string | null };
-      const createdStores: StoreType[] = [];
+      const createdStores = [] as StoreSelect[];
       for (const storeData of testStores) {
         try {
-          const store = await prisma.store.create({
+          const store: StoreSelect = await prisma.store.create({
             data: {
               name: storeData.name,
               logo: storeData.logo,
@@ -123,7 +124,7 @@ export async function GET(
         } catch (error: unknown) {
           // Store might already exist, try to find it
           const _err = error as { code?: string; message?: string };
-          const existing = await prisma.store.findUnique({
+          const existing: StoreSelect | null = await prisma.store.findUnique({
             where: { name: storeData.name },
             select: {
               id: true,
@@ -165,7 +166,7 @@ export async function GET(
       ];
 
       for (const variantData of appleVariants) {
-        const store = createdStores.find((s: { id: string; name: string; logo: string | null }) => s.name === variantData.store);
+        const store: StoreSelect | undefined = createdStores.find((s) => s.name === variantData.store);
         if (store) {
           try {
             await prisma.productVariant.create({
