@@ -258,11 +258,11 @@ export async function GET(
       },
     });
   } catch (error: unknown) {
-    const err = error as { message?: string };
+    const err = error as { code?: string; message?: string };
     console.error("Error fetching variants:", error);
     
     // If Store/ProductVariant tables don't exist (migration not run), return empty arrays
-    if (error?.code === 'P2001' || error?.message?.includes('does not exist') || error?.message?.includes('Store') || error?.message?.includes('ProductVariant')) {
+    if (err?.code === 'P2001' || err?.message?.includes('does not exist') || err?.message?.includes('Store') || err?.message?.includes('ProductVariant')) {
       console.log("Store/ProductVariant tables don't exist yet, returning empty arrays");
       return NextResponse.json({
         success: true,
@@ -274,7 +274,7 @@ export async function GET(
     }
     
     return NextResponse.json(
-      { success: false, error: `Failed to fetch variants: ${error?.message || 'Unknown error'}`, code: "INTERNAL_ERROR" },
+      { success: false, error: `Failed to fetch variants: ${err?.message || 'Unknown error'}`, code: "INTERNAL_ERROR" },
       { status: 500 }
     );
   }

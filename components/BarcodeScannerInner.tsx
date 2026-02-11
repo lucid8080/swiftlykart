@@ -18,16 +18,24 @@ function polyfillGetUserMedia() {
   }
 
   // Polyfill for older browsers - use type assertion to work around readonly
-  const nav = navigator as { getUserMedia?: unknown; webkitGetUserMedia?: unknown; mozGetUserMedia?: unknown; msGetUserMedia?: unknown };
+  const nav = navigator as {
+    getUserMedia?: unknown;
+    webkitGetUserMedia?: unknown;
+    mozGetUserMedia?: unknown;
+    msGetUserMedia?: unknown;
+    mediaDevices?: {
+      getUserMedia?: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
+    };
+  };
   if (!nav.mediaDevices) {
     nav.mediaDevices = {};
   }
   
   if (!nav.mediaDevices.getUserMedia) {
-    const getUserMedia = nav.getUserMedia || 
+    const getUserMedia = (nav.getUserMedia || 
                         nav.webkitGetUserMedia || 
                         nav.mozGetUserMedia ||
-                        nav.msGetUserMedia;
+                        nav.msGetUserMedia) as ((constraints: MediaStreamConstraints, successCallback: (stream: MediaStream) => void, errorCallback: (error: unknown) => void) => void) | undefined;
 
     if (!getUserMedia) {
       throw new Error('getUserMedia is not supported in this browser');

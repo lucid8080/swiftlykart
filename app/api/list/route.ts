@@ -86,7 +86,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<ListWithItems | nu
           }
         }
 
-        return {
+        const baseItem = {
           id: item.id,
           groceryItemId: item.groceryItemId,
           productVariantId: itemWithVariant.productVariantId || null,
@@ -97,20 +97,41 @@ export async function GET(): Promise<NextResponse<ApiResponse<ListWithItems | nu
             icon: item.groceryItem.icon,
             category: item.groceryItem.category,
           },
-          productVariant: itemWithVariant.productVariant ? {
+        };
+
+        let productVariant: {
+          id: string;
+          name: string;
+          imageUrl: string | null;
+          price: number | null;
+          store: { id: string; name: string };
+        } | undefined;
+
+        if (itemWithVariant.productVariant && itemWithVariant.productVariant.store) {
+          productVariant = {
             id: itemWithVariant.productVariant.id,
-            name: itemWithVariant.productVariant.name,
+            name: itemWithVariant.productVariant.name || '',
             imageUrl: itemWithVariant.productVariant.imageUrl,
             price: itemWithVariant.productVariant.price ?? null,
-            store: itemWithVariant.productVariant.store,
-          } : (price !== null ? {
-            // For generic items with calculated average price, create a synthetic variant
+            store: {
+              id: itemWithVariant.productVariant.store.id,
+              name: itemWithVariant.productVariant.store.name,
+            },
+          };
+        } else if (price !== null) {
+          // For generic items with calculated average price, create a synthetic variant
+          productVariant = {
             id: `generic-${item.groceryItemId}`,
             name: `Generic ${item.groceryItem.name}`,
             imageUrl: null,
             price: price,
-            store: { id: '', name: '', logo: null },
-          } : null),
+            store: { id: '', name: '' },
+          };
+        }
+
+        return {
+          ...baseItem,
+          ...(productVariant !== undefined && { productVariant }),
         };
       })
     );

@@ -83,8 +83,8 @@ export async function POST(
       if (
         prismaError?.code === "P2001" ||
         prismaError?.message?.includes("does not exist") ||
-        error?.message?.includes("Store") ||
-        error?.message?.includes("ProductVariant")
+        prismaError?.message?.includes("Store") ||
+        prismaError?.message?.includes("ProductVariant")
       ) {
         console.log("Store/ProductVariant tables don't exist yet, returning empty recommendations");
         // Get the items that were requested to show them in notFound

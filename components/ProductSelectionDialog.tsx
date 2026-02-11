@@ -201,7 +201,7 @@ function ProductSelectionDialogComponent({
 
     // Add only the groups (stores/brands/types) - not the variants
     groupedOptions.forEach((group) => {
-      const storeGroups = 'storeGroups' in group ? group.storeGroups : undefined;
+      const storeGroups = 'storeGroups' in group && Array.isArray(group.storeGroups) ? group.storeGroups : undefined;
       options.push({
         id: `group-${group.groupName}`,
         name: group.groupName,
