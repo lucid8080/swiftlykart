@@ -73,8 +73,8 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
       // Cleanup when closed
       if (scannerRef.current && scannerRef.current.quagga) {
         try {
-          scannerRef.current.quagga.stop();
-          scannerRef.current.quagga.offDetected();
+          scannerRef.current.quagga.stop?.();
+          scannerRef.current.quagga.offDetected?.();
         } catch {
           // Ignore cleanup errors
         }
@@ -125,14 +125,20 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
 
         // Load QuaggaJS from CDN
         await loadQuaggaJS();
-        const Quagga = (window as { Quagga?: unknown }).Quagga;
+        const Quagga = (window as { Quagga?: {
+          init?: (config: unknown, callback: (err: unknown) => void) => void;
+          start?: () => void;
+          stop?: () => void;
+          onDetected?: (callback: (result: { codeResult?: { code?: string } }) => void) => void;
+          offDetected?: () => void;
+        } }).Quagga;
         
         if (!Quagga) {
           throw new Error("Failed to load QuaggaJS library");
         }
 
         // Initialize QuaggaJS
-        Quagga.init({
+        Quagga.init?.({
           inputStream: {
             name: "Live",
             type: "LiveStream",
@@ -162,11 +168,11 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
           }
           setScanning(true);
           setError(null);
-          Quagga.start();
+          Quagga.start?.();
         });
 
         // Handle detected barcodes
-        Quagga.onDetected((result: { codeResult?: { code?: string } }) => {
+        Quagga.onDetected?.((result: { codeResult?: { code?: string } }) => {
           const code = result.codeResult?.code;
           if (code) {
             handleBarcodeScanned(code);
@@ -195,8 +201,8 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
       // Cleanup on unmount
       if (scannerRef.current && scannerRef.current.quagga) {
         try {
-          scannerRef.current.quagga.stop();
-          scannerRef.current.quagga.offDetected();
+          scannerRef.current.quagga.stop?.();
+          scannerRef.current.quagga.offDetected?.();
         } catch {
           // Ignore cleanup errors
         }
@@ -211,7 +217,7 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
     // Stop scanning
     if (scannerRef.current && scannerRef.current.quagga) {
       try {
-        scannerRef.current.quagga.stop();
+        scannerRef.current.quagga.stop?.();
         setScanning(false);
       } catch (err) {
         // Ignore stop errors
