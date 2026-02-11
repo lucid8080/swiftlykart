@@ -51,7 +51,12 @@ export async function PUT(
     }
 
     // Clean up the data - convert empty strings to null
-    const cleanData: Record<string, unknown> = {};
+    const cleanData: {
+      name?: string;
+      price?: number | null;
+      imageUrl?: string | null;
+      barcode?: string | null;
+    } = {};
     if (validation.data.name !== undefined) cleanData.name = validation.data.name;
     if (validation.data.price !== undefined) {
       cleanData.price = validation.data.price === null ? null : validation.data.price;

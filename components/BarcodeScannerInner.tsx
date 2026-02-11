@@ -61,7 +61,13 @@ function loadQuaggaJS(): Promise<void> {
 }
 
 export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeScannerInnerProps) {
-  const scannerRef = useRef<any | null>(null);
+  const scannerRef = useRef<{ quagga?: {
+    init?: (config: unknown, callback: (err: unknown) => void) => void;
+    start?: () => void;
+    stop?: () => void;
+    onDetected?: (callback: (result: { codeResult?: { code?: string } }) => void) => void;
+    offDetected?: () => void;
+  } } | null>(null);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);

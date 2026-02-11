@@ -69,7 +69,14 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
     }
 
     // Build clean data object - only include barcode if it has a value
-    const cleanData: Record<string, unknown> = {
+    const cleanData: {
+      groceryItemId: string;
+      storeId: string;
+      name: string;
+      price: number | null;
+      imageUrl: string | null;
+      barcode?: string | null;
+    } = {
       groceryItemId: validation.data.groceryItemId,
       storeId: validation.data.storeId,
       name: validation.data.name,
@@ -105,8 +112,9 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
       meta: err.meta,
     });
     
-    if (error.code === "P2002") {
-      const field = error.meta?.target?.join(', ') || 'fields';
+    if (err.code === "P2002") {
+      const meta = err.meta as { target?: string[] } | undefined;
+      const field = meta?.target?.join(', ') || 'fields';
       return NextResponse.json(
         { success: false, error: `A variant with this ${field} already exists`, code: "DUPLICATE" },
         { status: 400 }
@@ -114,7 +122,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
     }
     
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to create variant", code: "INTERNAL_ERROR" },
+      { success: false, error: err.message || "Failed to create variant", code: "INTERNAL_ERROR" },
       { status: 500 }
     );
   }

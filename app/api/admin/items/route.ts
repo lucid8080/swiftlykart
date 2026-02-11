@@ -91,8 +91,8 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
         // Calculate estimated price (average)
         let estimatedPrice: number | null = null;
         if (item.productVariants.length > 0) {
-          const prices = item.productVariants
-            .map((v: { price: number | null }) => v.price)
+          const prices = (item.productVariants as Array<{ price: number | null }>)
+            .map((v) => v.price)
             .filter((p): p is number => p !== null);
           if (prices.length > 0) {
             const sum = prices.reduce((acc, p) => acc + p, 0);

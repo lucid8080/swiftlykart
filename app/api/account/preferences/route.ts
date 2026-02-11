@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { nfcLandingMode: mode, nfcLandingPath: initialPath } = validation.data;
-    let nfcLandingMode = mode;
+    const nfcLandingMode = mode;
     let nfcLandingPath = initialPath;
 
     // Enforce path rules based on mode

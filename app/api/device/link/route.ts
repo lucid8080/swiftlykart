@@ -71,20 +71,30 @@ export async function POST(): Promise<NextResponse<ApiResponse<{ linked: boolean
 
       // Merge items
       for (const item of deviceList.items) {
-        await prisma.listItem.upsert({
+        // Use findFirst + create/update since productVariantId might be null
+        const existing = await prisma.listItem.findFirst({
           where: {
-            listId_groceryItemId: {
-              listId: userList.id,
-              groceryItemId: item.groceryItemId,
-            },
-          },
-          update: { active: true },
-          create: {
             listId: userList.id,
             groceryItemId: item.groceryItemId,
-            active: true,
+            productVariantId: item.productVariantId || null,
           },
         });
+
+        if (existing) {
+          await prisma.listItem.update({
+            where: { id: existing.id },
+            data: { active: true },
+          });
+        } else {
+          await prisma.listItem.create({
+            data: {
+              listId: userList.id,
+              groceryItemId: item.groceryItemId,
+              productVariantId: item.productVariantId || null,
+              active: true,
+            },
+          });
+        }
       }
 
       // Archive device list
@@ -95,7 +105,7 @@ export async function POST(): Promise<NextResponse<ApiResponse<{ linked: boolean
     }
 
     return NextResponse.json({ success: true, data: { linked: true } });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Error linking device:", error);
     return NextResponse.json(
       { success: false, error: "Failed to link device", code: "INTERNAL_ERROR" },

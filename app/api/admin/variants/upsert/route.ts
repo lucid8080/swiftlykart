@@ -105,8 +105,9 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
       meta: err.meta,
     });
 
-    if (error.code === "P2002") {
-      const field = error.meta?.target?.join(", ") || "fields";
+    if (err.code === "P2002") {
+      const meta = err.meta as { target?: string[] } | undefined;
+      const field = meta?.target?.join(", ") || "fields";
       return NextResponse.json(
         { success: false, error: `A variant with this ${field} already exists`, code: "DUPLICATE" },
         { status: 400 }
@@ -114,7 +115,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
     }
 
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to upsert variant", code: "INTERNAL_ERROR" },
+      { success: false, error: err.message || "Failed to upsert variant", code: "INTERNAL_ERROR" },
       { status: 500 }
     );
   }
