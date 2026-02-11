@@ -69,7 +69,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
     }
 
     // Build clean data object - only include barcode if it has a value
-    const cleanData: any = {
+    const cleanData: Record<string, unknown> = {
       groceryItemId: validation.data.groceryItemId,
       storeId: validation.data.storeId,
       name: validation.data.name,
@@ -96,12 +96,13 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
     });
 
     return NextResponse.json({ success: true, data: variant }, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as { code?: string; message?: string; meta?: unknown };
     console.error("Error creating variant:", error);
     console.error("Error details:", {
-      code: error.code,
-      message: error.message,
-      meta: error.meta,
+      code: err.code,
+      message: err.message,
+      meta: err.meta,
     });
     
     if (error.code === "P2002") {

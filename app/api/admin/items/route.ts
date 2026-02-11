@@ -26,7 +26,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
     const skip = (page - 1) * pageSize;
 
     // Build where clause
-    const where: any = {};
+    const where: Record<string, unknown> = {};
     if (q) {
       where.name = { contains: q, mode: "insensitive" };
     }
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
     }
 
     // If storeId is provided, include the variant for that store
-    const include: any = {
+    const include: Record<string, unknown> = {
       category: {
         select: { id: true, name: true },
       },
@@ -92,7 +92,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
         let estimatedPrice: number | null = null;
         if (item.productVariants.length > 0) {
           const prices = item.productVariants
-            .map((v: any) => v.price)
+            .map((v: { price: number | null }) => v.price)
             .filter((p): p is number => p !== null);
           if (prices.length > 0) {
             const sum = prices.reduce((acc, p) => acc + p, 0);

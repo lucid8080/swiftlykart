@@ -173,7 +173,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
     const productName = product.product_name_en || product.product_name || "Unknown Product";
 
     // Check if ProductVariant with this barcode already exists
-    let existingVariant = await prisma.productVariant.findUnique({
+    const existingVariant = await prisma.productVariant.findUnique({
       where: { barcode },
       include: {
         groceryItem: {
@@ -299,10 +299,11 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
               // No barcode for additional variants (barcode is unique)
             },
           });
-        } catch (error: any) {
+        } catch (error: unknown) {
           // Variant might already exist (unique constraint), skip silently
-          if (!error.message?.includes("Unique constraint") && !error.code?.includes("P2002")) {
-            console.error(`Error creating variant for store ${stores[i].name}:`, error.message);
+          const prismaError = error as { code?: string; message?: string };
+          if (!prismaError.message?.includes("Unique constraint") && !prismaError.code?.includes("P2002")) {
+            console.error(`Error creating variant for store ${stores[i].name}:`, prismaError.message);
           }
         }
       }

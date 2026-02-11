@@ -51,7 +51,7 @@ export async function PUT(
     }
 
     // Clean up the data - convert empty strings to null
-    const cleanData: any = {};
+    const cleanData: Record<string, unknown> = {};
     if (validation.data.name !== undefined) cleanData.name = validation.data.name;
     if (validation.data.price !== undefined) {
       cleanData.price = validation.data.price === null ? null : validation.data.price;
@@ -95,10 +95,11 @@ export async function PUT(
     });
 
     return NextResponse.json({ success: true, data: variant });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as { code?: string; message?: string };
     console.error("Error updating variant:", error);
     
-    if (error.code === "P2025") {
+    if (err.code === "P2025") {
       return NextResponse.json(
         { success: false, error: "Variant not found", code: "NOT_FOUND" },
         { status: 404 }

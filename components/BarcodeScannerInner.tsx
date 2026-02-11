@@ -18,7 +18,7 @@ function polyfillGetUserMedia() {
   }
 
   // Polyfill for older browsers - use type assertion to work around readonly
-  const nav = navigator as any;
+  const nav = navigator as { getUserMedia?: unknown; webkitGetUserMedia?: unknown; mozGetUserMedia?: unknown; msGetUserMedia?: unknown };
   if (!nav.mediaDevices) {
     nav.mediaDevices = {};
   }
@@ -44,7 +44,7 @@ function polyfillGetUserMedia() {
 // Load QuaggaJS from CDN
 function loadQuaggaJS(): Promise<void> {
   return new Promise((resolve, reject) => {
-    if ((window as any).Quagga) {
+    if ((window as { Quagga?: unknown }).Quagga) {
       resolve();
       return;
     }
@@ -118,13 +118,14 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
         // Ensure getUserMedia is polyfilled before loading QuaggaJS
         try {
           polyfillGetUserMedia();
-        } catch (err: any) {
-          throw new Error(`Camera API not available: ${err.message}`);
+        } catch (err: unknown) {
+          const error = err as { message?: string };
+          throw new Error(`Camera API not available: ${error.message || "Unknown error"}`);
         }
 
         // Load QuaggaJS from CDN
         await loadQuaggaJS();
-        const Quagga = (window as any).Quagga;
+        const Quagga = (window as { Quagga?: unknown }).Quagga;
         
         if (!Quagga) {
           throw new Error("Failed to load QuaggaJS library");
@@ -151,10 +152,11 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
             readers: ["ean_reader", "ean_8_reader", "code_128_reader", "code_39_reader", "upc_reader", "upc_e_reader"]
           },
           locate: true
-        }, (err: any) => {
+        }, (err: unknown) => {
           if (err) {
+            const error = err as { message?: string };
             console.error("Quagga initialization error:", err);
-            setError(err.message || "Failed to initialize camera. Please check permissions.");
+            setError(error.message || "Failed to initialize camera. Please check permissions.");
             setScanning(false);
             return;
           }
@@ -164,8 +166,8 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
         });
 
         // Handle detected barcodes
-        Quagga.onDetected((result: any) => {
-          const code = result.codeResult.code;
+        Quagga.onDetected((result: { codeResult?: { code?: string } }) => {
+          const code = result.codeResult?.code;
           if (code) {
             handleBarcodeScanned(code);
           }
@@ -175,10 +177,11 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
 
         setScanning(true);
         setError(null);
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const error = err as { message?: string };
         console.error("Scanner initialization error:", err);
         setError(
-          err.message?.includes("Permission")
+          error.message?.includes("Permission")
             ? "Camera permission denied. Please allow camera access."
             : "Failed to start camera. Please check your device settings."
         );

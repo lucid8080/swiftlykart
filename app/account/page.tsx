@@ -329,9 +329,10 @@ export default function AccountPage() {
         text: "Check out my grocery list!",
         url: url,
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       // User cancelled or error occurred
-      if (error.name !== "AbortError") {
+      const err = error as { name?: string };
+      if (err.name !== "AbortError") {
         console.error("Error sharing:", error);
       }
     }

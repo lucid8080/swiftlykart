@@ -62,7 +62,7 @@ export default function LoginPage() {
         }
       } else {
         // Register
-        const payload: any = { email, password };
+        const payload: Record<string, string> = { email, password };
         if (name) payload.name = name;
         // Only include contact fields if they have values
         if (firstName) payload.firstName = firstName;

@@ -96,12 +96,13 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
     });
 
     return NextResponse.json({ success: true, data: variant }, { status: 200 });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as { code?: string; message?: string; meta?: unknown };
     console.error("Error upserting variant:", error);
     console.error("Error details:", {
-      code: error.code,
-      message: error.message,
-      meta: error.meta,
+      code: err.code,
+      message: err.message,
+      meta: err.meta,
     });
 
     if (error.code === "P2002") {

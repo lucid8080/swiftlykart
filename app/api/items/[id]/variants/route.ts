@@ -39,7 +39,7 @@ export async function GET(
 
     // Check if Store model exists in Prisma client (needs regeneration)
     const prismaKeys = Object.keys(prisma).filter(k => !k.startsWith('_') && k !== '$connect' && k !== '$disconnect' && k !== '$transaction' && k !== '$use' && k !== '$on' && k !== '$extends');
-    const hasStoreModel = 'store' in prisma && prisma.store && typeof (prisma.store as any).findMany === 'function';
+    const hasStoreModel = 'store' in prisma && prisma.store && typeof (prisma.store as { findMany?: unknown }).findMany === 'function';
     
     if (!hasStoreModel) {
       console.log("⚠️ Store model not available in Prisma client");
@@ -67,9 +67,10 @@ export async function GET(
           logo: true,
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       // If Store table doesn't exist (migration not run), return empty
-      if (error?.code === 'P2001' || error?.message?.includes('does not exist') || error?.message?.includes('Store') || error?.message?.includes('Cannot read properties')) {
+      const prismaError = error as { code?: string; message?: string };
+      if (prismaError?.code === 'P2001' || prismaError?.message?.includes('does not exist') || prismaError?.message?.includes('Store') || prismaError?.message?.includes('Cannot read properties')) {
         console.log("Store table doesn't exist yet (migration not run)");
         return NextResponse.json({
           success: true,
@@ -118,8 +119,9 @@ export async function GET(
             },
           });
           createdStores.push(store);
-        } catch (error: any) {
+        } catch (error: unknown) {
           // Store might already exist, try to find it
+          const _err = error as { code?: string; message?: string };
           const existing = await prisma.store.findUnique({
             where: { name: storeData.name },
             select: {
@@ -174,23 +176,25 @@ export async function GET(
                 imageUrl: null,
               },
             });
-          } catch (error: any) {
+          } catch (error: unknown) {
             // Variant might already exist, skip
-            if (!error.message?.includes("Unique constraint")) {
+            const err = error as { message?: string };
+            if (!err.message?.includes("Unique constraint")) {
               console.error("Error creating variant:", error);
             }
           }
         }
       }
-      } catch (createError: any) {
+      } catch (createError: unknown) {
         // If we can't create (tables don't exist or Prisma client not regenerated), just return empty arrays
-        console.log("Could not create test data:", createError?.message);
+        const err = createError as { message?: string };
+        console.log("Could not create test data:", err?.message);
         // Continue to return empty arrays below
       }
     }
 
     // Check if ProductVariant model exists in Prisma client
-    const hasProductVariantModel = 'productVariant' in prisma && prisma.productVariant && typeof (prisma.productVariant as any).findMany === 'function';
+    const hasProductVariantModel = 'productVariant' in prisma && prisma.productVariant && typeof (prisma.productVariant as { findMany?: unknown }).findMany === 'function';
     if (!hasProductVariantModel) {
       console.log("⚠️ ProductVariant model not available in Prisma client");
       console.log("⚠️ Run: npx prisma generate");
@@ -219,9 +223,10 @@ export async function GET(
         },
         orderBy: [{ store: { name: "asc" } }, { name: "asc" }],
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       // If ProductVariant table doesn't exist, return empty
-      if (error?.code === 'P2001' || error?.message?.includes('does not exist') || error?.message?.includes('ProductVariant') || error?.message?.includes('Cannot read properties')) {
+      const prismaError = error as { code?: string; message?: string };
+      if (prismaError?.code === 'P2001' || prismaError?.message?.includes('does not exist') || prismaError?.message?.includes('ProductVariant') || prismaError?.message?.includes('Cannot read properties')) {
         console.log("ProductVariant table doesn't exist yet (migration not run)");
         return NextResponse.json({
           success: true,
@@ -252,7 +257,8 @@ export async function GET(
         variants: formattedVariants,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as { message?: string };
     console.error("Error fetching variants:", error);
     
     // If Store/ProductVariant tables don't exist (migration not run), return empty arrays

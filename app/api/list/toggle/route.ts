@@ -51,9 +51,10 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse<{
             { status: 404 }
           );
         }
-      } catch (error: any) {
+      } catch (error: unknown) {
         // If ProductVariant table doesn't exist (migration not applied), ignore productVariantId
-        if (error?.code === 'P2001' || error?.message?.includes('ProductVariant') || error?.message?.includes('does not exist')) {
+        const prismaError = error as { code?: string; message?: string };
+        if (prismaError?.code === 'P2001' || prismaError?.message?.includes('ProductVariant') || prismaError?.message?.includes('does not exist')) {
           // Continue without variant validation - will be handled in toggleListItem
         } else {
           throw error;

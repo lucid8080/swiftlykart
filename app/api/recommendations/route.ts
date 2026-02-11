@@ -77,11 +77,12 @@ export async function POST(
           },
         },
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
       // If Store/ProductVariant tables don't exist (migration not run), return empty
+      const prismaError = error as { code?: string; message?: string };
       if (
-        error?.code === "P2001" ||
-        error?.message?.includes("does not exist") ||
+        prismaError?.code === "P2001" ||
+        prismaError?.message?.includes("does not exist") ||
         error?.message?.includes("Store") ||
         error?.message?.includes("ProductVariant")
       ) {
@@ -158,12 +159,13 @@ export async function POST(
         notFound,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as { message?: string };
     console.error("Error fetching recommendations:", error);
     return NextResponse.json(
       {
         success: false,
-        error: `Failed to fetch recommendations: ${error?.message || "Unknown error"}`,
+        error: `Failed to fetch recommendations: ${err?.message || "Unknown error"}`,
         code: "INTERNAL_ERROR",
       },
       { status: 500 }

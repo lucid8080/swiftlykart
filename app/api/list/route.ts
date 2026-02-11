@@ -3,6 +3,34 @@ import { resolveCurrentList } from "@/lib/list";
 import type { ApiResponse, ListWithItems } from "@/lib/zod";
 import { prisma } from "@/lib/db";
 
+// Type helper for list items with optional productVariant
+type ListItemWithVariant = {
+  id: string;
+  groceryItemId: string;
+  productVariantId?: string | null;
+  active: boolean;
+  groceryItem: {
+    id: string;
+    name: string;
+    icon: string | null;
+    category: {
+      id: string;
+      name: string;
+    };
+  };
+  productVariant?: {
+    id: string;
+    name: string | null;
+    imageUrl: string | null;
+    price: number | null;
+    store: {
+      id: string;
+      name: string;
+      logo: string | null;
+    } | null;
+  } | null;
+};
+
 /**
  * GET /api/list
  * Returns the current user's list (by session, device, or PIN)
@@ -28,8 +56,9 @@ export async function GET(): Promise<NextResponse<ApiResponse<ListWithItems | nu
         let price = null;
         
         // If item has a product variant, use its price
-        if ((item as any).productVariant) {
-          price = (item as any).productVariant.price ?? null;
+        const itemWithVariant = item as ListItemWithVariant;
+        if (itemWithVariant.productVariant) {
+          price = itemWithVariant.productVariant.price ?? null;
         } else {
           // For generic items, calculate average price from all variants
           try {
@@ -60,7 +89,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<ListWithItems | nu
         return {
           id: item.id,
           groceryItemId: item.groceryItemId,
-          productVariantId: (item as any).productVariantId || null,
+          productVariantId: itemWithVariant.productVariantId || null,
           active: item.active,
           groceryItem: {
             id: item.groceryItem.id,
@@ -68,12 +97,12 @@ export async function GET(): Promise<NextResponse<ApiResponse<ListWithItems | nu
             icon: item.groceryItem.icon,
             category: item.groceryItem.category,
           },
-          productVariant: (item as any).productVariant ? {
-            id: (item as any).productVariant.id,
-            name: (item as any).productVariant.name,
-            imageUrl: (item as any).productVariant.imageUrl,
-            price: (item as any).productVariant.price ?? null,
-            store: (item as any).productVariant.store,
+          productVariant: itemWithVariant.productVariant ? {
+            id: itemWithVariant.productVariant.id,
+            name: itemWithVariant.productVariant.name,
+            imageUrl: itemWithVariant.productVariant.imageUrl,
+            price: itemWithVariant.productVariant.price ?? null,
+            store: itemWithVariant.productVariant.store,
           } : (price !== null ? {
             // For generic items with calculated average price, create a synthetic variant
             id: `generic-${item.groceryItemId}`,

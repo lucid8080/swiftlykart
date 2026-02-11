@@ -472,8 +472,9 @@ export default function AdminItemsPage() {
       } else {
         setError(data.error || "Failed to save variant");
       }
-    } catch (err: any) {
-      setError(err.message || "Failed to save variant");
+    } catch (err: unknown) {
+      const error = err as { message?: string };
+      setError(error.message || "Failed to save variant");
     } finally {
       setSavingVariants((prev) => {
         const next = new Set(prev);
@@ -614,9 +615,10 @@ export default function AdminItemsPage() {
         console.error("Save failed:", errorMsg, data);
         setError(errorMsg);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { message?: string };
       console.error("Error saving variant:", error);
-      setError(error.message || "Failed to save variant");
+      setError(err.message || "Failed to save variant");
     } finally {
       setFormLoading(false);
     }
