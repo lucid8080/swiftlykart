@@ -104,7 +104,8 @@ export async function GET(
         { name: "T&T Supermarket", logo: null },
       ];
 
-      const createdStores = [];
+      type StoreType = { id: string; name: string; logo: string | null };
+      const createdStores: StoreType[] = [];
       for (const storeData of testStores) {
         try {
           const store = await prisma.store.create({
@@ -136,7 +137,7 @@ export async function GET(
         }
       }
 
-      stores = createdStores;
+      stores = createdStores as typeof stores;
 
       // Create apple variants (Canadian stores)
       const appleVariants = [
@@ -164,7 +165,7 @@ export async function GET(
       ];
 
       for (const variantData of appleVariants) {
-        const store = createdStores.find((s) => s.name === variantData.store);
+        const store = createdStores.find((s: { id: string; name: string; logo: string | null }) => s.name === variantData.store);
         if (store) {
           try {
             await prisma.productVariant.create({

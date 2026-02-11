@@ -465,13 +465,12 @@ export async function toggleListItem(
     // If productVariantId field doesn't exist (migration not applied), fall back to old behavior
     const prismaError = error as { code?: string; message?: string };
     if (prismaError?.code === 'P2009' || prismaError?.message?.includes('Unknown column') || prismaError?.message?.includes('productVariantId')) {
-      // Fallback to old constraint (without productVariantId)
-      const existingItem = await prisma.listItem.findUnique({
+      // Fallback to old constraint (without productVariantId) - use findFirst instead
+      const existingItem = await prisma.listItem.findFirst({
         where: {
-          listId_groceryItemId: {
-            listId,
-            groceryItemId,
-          },
+          listId,
+          groceryItemId,
+          productVariantId: null,
         },
       });
 
