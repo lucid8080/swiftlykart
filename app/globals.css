@@ -1,0 +1,187 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  
+  /* Custom colors - Warm earthy palette */
+  --color-primary-50: #fef7ee;
+  --color-primary-100: #fdecd3;
+  --color-primary-200: #fad5a5;
+  --color-primary-300: #f6b86d;
+  --color-primary-400: #f19232;
+  --color-primary-500: #ed7712;
+  --color-primary-600: #de5d08;
+  --color-primary-700: #b84409;
+  --color-primary-800: #93360f;
+  --color-primary-900: #772f10;
+  --color-primary-950: #401506;
+
+  --color-accent-50: #f0fdf4;
+  --color-accent-100: #dcfce7;
+  --color-accent-200: #bbf7d0;
+  --color-accent-300: #86efac;
+  --color-accent-400: #4ade80;
+  --color-accent-500: #22c55e;
+  --color-accent-600: #16a34a;
+  --color-accent-700: #15803d;
+  --color-accent-800: #166534;
+  --color-accent-900: #14532d;
+  --color-accent-950: #052e16;
+}
+
+:root {
+  --background: #fffbf5;
+  --foreground: #1a1207;
+  --card: #ffffff;
+  --card-foreground: #1a1207;
+  --muted: #f5f0e8;
+  --muted-foreground: #6b5c4c;
+  --border: #e8dfd2;
+  --ring: #ed7712;
+  --selected-bg: #fef7ee;
+  --selected-border: #f19232;
+}
+
+.dark {
+  --background: #0f0d0a;
+  --foreground: #f5f0e8;
+  --card: #1a1612;
+  --card-foreground: #f5f0e8;
+  --muted: #262119;
+  --muted-foreground: #a89a87;
+  --border: #3d352a;
+  --ring: #f19232;
+  --selected-bg: #2a2318;
+  --selected-border: #ed7712;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--muted);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--muted-foreground);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--foreground);
+  }
+}
+
+@layer utilities {
+  .bg-background { background-color: var(--background); }
+  .bg-card { background-color: var(--card); }
+  .bg-muted { background-color: var(--muted); }
+  .bg-selected { background-color: var(--selected-bg); }
+  
+  .text-foreground { color: var(--foreground); }
+  .text-card-foreground { color: var(--card-foreground); }
+  .text-muted-foreground { color: var(--muted-foreground); }
+  
+  .border-border { border-color: var(--border); }
+  .border-selected { border-color: var(--selected-border); }
+  
+  .ring-ring { --tw-ring-color: var(--ring); }
+
+  /* Focus visible styles */
+  .focus-ring {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-offset-2;
+    --tw-ring-color: var(--ring);
+    --tw-ring-offset-color: var(--background);
+  }
+
+  /* Smooth transitions */
+  .transition-colors-fast {
+    transition-property: color, background-color, border-color;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
+
+  /* Safe area padding for PWA */
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
+/* Google Fonts import */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* PWA standalone mode adjustments */
+@media (display-mode: standalone) {
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  
+  .safe-top {
+    padding-top: max(env(safe-area-inset-top, 0px), 20px);
+  }
+}
+
+/* Bottom sheet animation */
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out forwards;
+}
+
+.animate-slide-down {
+  animation: slideDown 0.3s ease-out forwards;
+}
+
+/* Fade animation */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out forwards;
+}
+
+/* Stagger animation delays */
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }

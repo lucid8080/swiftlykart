@@ -1,0 +1,347 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// NextAuth Required Models
+model User {
+  id             String          @id @default(uuid())
+  name           String?
+  email          String?         @unique
+  emailVerified  DateTime?
+  image          String?
+  password       String? // For credentials auth
+  role           String          @default("user") // user | admin
+  // Optional contact info fields
+  firstName      String?
+  lastName       String?
+  phone          String?
+  address1       String?
+  address2       String?
+  city           String?
+  region         String? // Province/State (e.g., "ON")
+  postalCode     String?
+  country        String? // Default "CA" if you want
+  accounts       Account[]
+  sessions       Session[]
+  devices        Device[]
+  lists          List[]
+  identityClaims IdentityClaim[] // Retroactive attribution audit
+  preference     UserPreference? // NFC landing preference
+  linkedNfcTags  NfcTag[]        @relation("LinkedNfcTags") // Tags linked to this user
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([region])
+  @@index([postalCode])
+}
+
+model Account {
+  id                String  @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// Device Identity
+model Device {
+  id        String   @id @default(uuid())
+  deviceId  String   @unique // UUID stored in client localStorage/cookie
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  lists     List[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Grocery List
+model List {
+  id            String     @id @default(uuid())
+  name          String     @default("My Groceries")
+  ownerUserId   String?
+  ownerUser     User?      @relation(fields: [ownerUserId], references: [id], onDelete: SetNull)
+  ownerDeviceId String?
+  ownerDevice   Device?    @relation(fields: [ownerDeviceId], references: [id], onDelete: SetNull)
+  pinLookup     String?    @unique // sha256(pin + pepper) for lookup
+  pinHash       String? // bcrypt hash for verification
+  isArchived    Boolean    @default(false)
+  items         ListItem[]
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+}
+
+// Categories
+model Category {
+  id        String        @id @default(uuid())
+  name      String        @unique
+  sortOrder Int           @default(0)
+  items     GroceryItem[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+// Grocery Items (master list)
+model GroceryItem {
+  id              String           @id @default(uuid())
+  name            String
+  categoryId      String
+  category        Category         @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  icon            String? // emoji or lucide icon name
+  isActive        Boolean          @default(true)
+  sortOrder       Int              @default(0)
+  listItems       ListItem[]
+  productVariants ProductVariant[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@unique([name, categoryId])
+}
+
+// Stores
+model Store {
+  id        String           @id @default(uuid())
+  name      String           @unique
+  logo      String? // URL to store logo
+  variants  ProductVariant[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+}
+
+// Product Variants (store-specific products)
+model ProductVariant {
+  id            String      @id @default(uuid())
+  groceryItemId String
+  groceryItem   GroceryItem @relation(fields: [groceryItemId], references: [id], onDelete: Cascade)
+  storeId       String
+  store         Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  name          String // e.g., "Red Apple" or "Organic Red Apple"
+  imageUrl      String? // URL to product image
+  price         Float? // Optional price
+  barcode       String?     @unique // Barcode (EAN/UPC) from OpenFoodFacts
+  listItems     ListItem[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([groceryItemId, storeId]) // One variant per item+store pair for upsert
+}
+
+// List Items (selected groceries)
+model ListItem {
+  id               String          @id @default(uuid())
+  listId           String
+  list             List            @relation(fields: [listId], references: [id], onDelete: Cascade)
+  groceryItemId    String
+  groceryItem      GroceryItem     @relation(fields: [groceryItemId], references: [id], onDelete: Cascade)
+  productVariantId String? // Optional: specific store product
+  productVariant   ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
+  active           Boolean         @default(true) // true = in cart, false = bought/removed
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@unique([listId, groceryItemId, productVariantId])
+}
+
+// ═══════════════════════════════════════════════════════
+// NFC Tag Analytics + My List System
+// ═══════════════════════════════════════════════════════
+
+// NFC Tag Batches (campaign grouping)
+model TagBatch {
+  id          String     @id @default(uuid())
+  slug        String     @unique // e.g. "homedepot-2026-q1"
+  name        String // e.g. "Home Depot Q1 2026"
+  description String?
+  tags        NfcTag[]
+  tapEvents   TapEvent[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+// Individual NFC Tags
+model NfcTag {
+  id           String     @id @default(uuid()) // internal ID
+  publicUuid   String     @unique @default(uuid()) // UUIDv4 used in URL (not guessable)
+  batchId      String
+  batch        TagBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  label        String? // human label like "HD Tag 001"
+  status       String     @default("active") // active | disabled
+  linkedUserId String? // User who "owns" this tag — all taps attributed to them
+  linkedUser   User?      @relation("LinkedNfcTags", fields: [linkedUserId], references: [id], onDelete: SetNull)
+  tapEvents    TapEvent[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([batchId])
+  @@index([linkedUserId])
+}
+
+// Tap Events (one row per NFC scan / URL visit)
+model TapEvent {
+  id               String    @id @default(uuid())
+  tagId            String
+  tag              NfcTag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  batchId          String // denormalized for faster queries
+  batch            TagBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  occurredAt       DateTime  @default(now())
+  ipHash           String? // sha256(ip + SERVER_SALT) — never store raw IP
+  userAgent        String?
+  acceptLanguage   String?
+  referer          String?
+  deviceHint       String? // "mobile" | "desktop" | "tablet"
+  anonVisitorId    String? // localStorage ID if available
+  sessionHint      String? // short-lived dedupe key
+  country          String?
+  region           String?
+  isDuplicate      Boolean   @default(false)
+  duplicateOfId    String? // references original TapEvent.id if this is a dupe
+  visitorId        String?
+  visitor          Visitor?  @relation(fields: [visitorId], references: [id], onDelete: SetNull)
+  // Retroactive attribution fields
+  userId           String? // denormalized for fast queries (linked to User when claimed)
+  linkedAt         DateTime? // when this tap was attached to a user
+  linkMethod       String? // "tag_linked" | "session" | "anonVisitorId" | "recentTapSession" | "ipUaHeuristic"
+  tapperHadSession Boolean   @default(false) // true if the person who tapped had an active session (signed in)
+  createdAt        DateTime  @default(now())
+
+  @@index([batchId])
+  @@index([tagId])
+  @@index([anonVisitorId])
+  @@index([occurredAt])
+  @@index([ipHash, userAgent])
+  @@index([userId]) // for user queries
+}
+
+// Anonymous Visitors (NFC tappers tracked via localStorage ID)
+model Visitor {
+  id                String          @id @default(uuid())
+  anonVisitorId     String          @unique // random UUID from localStorage
+  firstSeenAt       DateTime        @default(now())
+  lastSeenAt        DateTime        @default(now())
+  tapCount          Int             @default(0)
+  lastTagId         String? // last NFC tag tapped (for attribution)
+  lastBatchId       String? // last batch (for attribution)
+  // Retroactive attribution fields
+  userId            String?         @unique // links Visitor to User account when claimed
+  ipHashLastSeen    String? // track last seen IP hash
+  userAgentLastSeen String? // track last seen user agent
+  tapEvents         TapEvent[]
+  myLists           MyList[]
+  identityClaims    IdentityClaim[] // audit trail of claims
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+// My List (shopping list for NFC visitors)
+model MyList {
+  id             String       @id @default(uuid())
+  ownerVisitorId String?
+  ownerVisitor   Visitor?     @relation(fields: [ownerVisitorId], references: [id], onDelete: SetNull)
+  ownerUserId    String? // optional, if auth exists (same as userId, kept for consistency)
+  sourceBatchId  String? // attributed NFC batch
+  sourceTagId    String? // attributed NFC tag
+  // Retroactive attribution fields
+  claimedAt      DateTime? // when this list was claimed by a user
+  items          MyListItem[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([ownerUserId]) // for user queries
+}
+
+// My List Items
+model MyListItem {
+  id             String    @id @default(uuid())
+  listId         String
+  list           MyList    @relation(fields: [listId], references: [id], onDelete: Cascade)
+  itemKey        String // canonical key like "bananas"
+  itemLabel      String // display label like "Bananas"
+  quantity       Int?
+  lastAddedAt    DateTime  @default(now())
+  timesPurchased Int       @default(0)
+  purchasedAt    DateTime?
+  sourceBatchId  String? // attributed batch for this item add
+  sourceTagId    String? // attributed tag for this item add
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([listId, itemKey])
+  @@index([itemKey])
+  @@index([purchasedAt])
+}
+
+// Item Catalog (canonical items for MyList)
+model ItemCatalog {
+  id        String   @id @default(uuid())
+  itemKey   String   @unique // canonical key like "bananas"
+  label     String // display label like "Bananas"
+  emoji     String? // emoji icon
+  category  String? // category name
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// User Preferences (NFC landing, etc.)
+model UserPreference {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  nfcLandingMode String   @default("home") // "home" | "list" | "custom"
+  nfcLandingPath String? // e.g. "/list" or "/" or custom path
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Identity Claim (audit table for retroactive attribution)
+model IdentityClaim {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  visitorId String
+  visitor   Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  claimedAt DateTime @default(now())
+  method    String // "anonVisitorId" | "recentTapSession" | "ipUaHeuristic"
+  details   Json? // optional metadata (tapSessionId, ipHash, etc.)
+
+  @@unique([userId, visitorId])
+  @@index([userId])
+  @@index([visitorId])
+  @@index([claimedAt])
+}
+
+// Global App Settings (single row with id="global")
+model AppConfig {
+  id            String   @id @default("global")
+  showPriceRange Boolean  @default(true)
+  updatedAt      DateTime @updatedAt
+}
