@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { KeyRound, ArrowLeft, Loader2, AlertCircle, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getDeviceHeaders } from "@/lib/device-client";
 
-export default function PinPage() {
+function PinPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const errorParam = searchParams.get("error");
@@ -238,5 +238,17 @@ export default function PinPage() {
         }
       `}</style>
     </div>
+  );
+}
+
+export default function PinPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex flex-col items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+      </div>
+    }>
+      <PinPageContent />
+    </Suspense>
   );
 }

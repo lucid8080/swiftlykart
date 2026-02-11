@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import { Providers } from "@/components/Providers";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 import { DeviceInit } from "@/components/DeviceInit";
@@ -57,7 +58,9 @@ export default function RootLayout({
         <Providers>
           <DeviceInit />
           <ServiceWorkerRegister />
-          <TapAttribution />
+          <Suspense fallback={null}>
+            <TapAttribution />
+          </Suspense>
           <AccountLinkPrompt />
           {children}
         </Providers>
