@@ -300,10 +300,15 @@ Users with these emails automatically get admin role on sign in.
 
 ### Vercel (Recommended)
 
-1. Push to GitHub
-2. Import to Vercel
-3. Add environment variables
-4. Deploy
+See **[VERCEL_DEPLOYMENT.md](./VERCEL_DEPLOYMENT.md)** for a complete step-by-step guide.
+
+**Quick Summary:**
+1. Push to GitHub ✅ (already done)
+2. Import project to Vercel
+3. Set up production PostgreSQL database
+4. Configure environment variables
+5. Run database migrations
+6. Deploy!
 
 ### Docker
 
