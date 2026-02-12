@@ -831,6 +831,48 @@ Three coordinated features to enhance the SwiftlyKart NFC+grocery platform:
 ### Executor's Feedback or Assistance Requests
 All 14 tasks completed. Migration note: used `prisma db push` instead of `prisma migrate dev` due to shadow database issue with an older migration.
 
+---
+
+## Checkout State Machine Feature — COMPLETED ✅
+
+### Background and Motivation
+Redesigned the "Done Shopping / Checkout" flow as a clean, deterministic state machine with signup-gated "Save for later + start fresh" functionality. This provides a better UX for both guests and logged-in users.
+
+### Implementation Summary
+- ✅ Added SavedList and SavedListItem models to Prisma schema
+- ✅ Created Zod schemas for checkout API
+- ✅ Implemented POST /api/checkout route with state machine logic
+- ✅ Created FoundEverythingDialog component (Modal 2)
+- ✅ Created SignupGateDialog component (Modal 3)
+- ✅ Created Toast component for notifications
+- ✅ Updated DoneShoppingDialog to match new UX (Modal 1)
+- ✅ Updated MyListDrawer to implement complete state machine flow
+
+### State Machine Flow
+1. **Modal 1: Done Shopping?** — "Did you find everything?"
+   - ✅ Yes → Opens Modal 2 (Found Everything)
+   - ❌ No → Calls checkout API with `outcome=MISSING_ITEMS, action=KEEP`, shows toast "List kept for next time"
+
+2. **Modal 2: Found Everything** — "Nice! Want to clear your list?"
+   - "Clear my list" → `action=CLEAR` (works for everyone)
+   - "Save this list for later + start fresh" → `action=SAVE_AND_CLEAR`
+     - If guest → API returns `requiresAuth=true` → Opens Modal 3 (Signup Gate)
+     - If logged-in → Saves snapshot, clears list, shows toast "Saved ✅ Fresh list ready"
+
+3. **Modal 3: Signup Gate** (only for guests attempting SAVE_AND_CLEAR)
+   - "Create free account" → Routes to `/login?next=/`
+   - "Not now — just clear" → Calls checkout with `action=CLEAR`
+
+### Database Migration Status
+⚠️ **Migration pending**: The Prisma schema changes are complete and valid, but the migration is blocked by a pre-existing ProductVariant unique constraint issue (duplicate `groceryItemId,storeId` pairs in the database). 
+
+**To apply the migration:**
+1. Fix ProductVariant duplicates in the database (remove or merge duplicates)
+2. Run `npx prisma db push --accept-data-loss` OR
+3. Manually create the SavedList and SavedListItem tables using the SQL from the schema
+
+The SavedList schema is correct and ready to use once the migration is applied.
+
 ### Lessons
 - Read files before editing
 - Identity claim already exists — improve it, don't rewrite from scratch

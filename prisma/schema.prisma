@@ -30,6 +30,7 @@ model User {
   sessions       Session[]
   devices        Device[]
   lists          List[]
+  savedLists     SavedList[]     @relation("SavedLists") // Saved list snapshots
   identityClaims IdentityClaim[] // Retroactive attribution audit
   preference     UserPreference? // NFC landing preference
   linkedNfcTags  NfcTag[]        @relation("LinkedNfcTags") // Tags linked to this user
@@ -122,6 +123,7 @@ model GroceryItem {
   isActive        Boolean          @default(true)
   sortOrder       Int              @default(0)
   listItems       ListItem[]
+  savedListItems  SavedListItem[]
   productVariants ProductVariant[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
@@ -151,6 +153,7 @@ model ProductVariant {
   price         Float? // Optional price
   barcode       String?     @unique // Barcode (EAN/UPC) from OpenFoodFacts
   listItems     ListItem[]
+  savedListItems SavedListItem[]
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
@@ -171,6 +174,31 @@ model ListItem {
   updatedAt        DateTime        @updatedAt
 
   @@unique([listId, groceryItemId, productVariantId])
+}
+
+// Saved Lists (snapshots for "Save for later" feature)
+model SavedList {
+  id          String          @id @default(uuid())
+  ownerUserId String // required - only logged-in users can save
+  ownerUser   User            @relation("SavedLists", fields: [ownerUserId], references: [id], onDelete: Cascade)
+  title       String          @default("Grocery Run")
+  items       SavedListItem[]
+  createdAt   DateTime        @default(now())
+
+  @@index([ownerUserId])
+}
+
+// Saved List Items
+model SavedListItem {
+  id            String     @id @default(uuid())
+  savedListId   String
+  savedList     SavedList  @relation(fields: [savedListId], references: [id], onDelete: Cascade)
+  groceryItemId String
+  groceryItem   GroceryItem @relation(fields: [groceryItemId], references: [id], onDelete: Cascade)
+  productVariantId String? // Optional: specific store product
+  productVariant   ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
+
+  @@unique([savedListId, groceryItemId])
 }
 
 // ═══════════════════════════════════════════════════════

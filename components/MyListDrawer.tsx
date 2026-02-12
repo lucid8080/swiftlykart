@@ -2,10 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef, memo } from "react";
 import { X, ShoppingCart, Trash2, ChevronUp, ChevronDown, CheckCircle2 } from "lucide-react";
+import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { getDeviceHeaders } from "@/lib/device-client";
 import type { CategoryWithItems, ListWithItems, PriceRange } from "@/lib/zod";
 import { DoneShoppingDialog } from "@/components/DoneShoppingDialog";
+import { FoundEverythingDialog } from "@/components/FoundEverythingDialog";
+import { SignupGateDialog } from "@/components/SignupGateDialog";
+import { Toast } from "@/components/Toast";
 import { ItemsNotFoundDialog } from "@/components/ItemsNotFoundDialog";
 import { RecommendationsDisplay } from "@/components/RecommendationsDisplay";
 import {
@@ -42,9 +46,12 @@ function MyListDrawerComponent({
   onClear,
   isToggling,
 }: MyListDrawerProps) {
+  const { data: session } = useSession();
   const [isOpen, setIsOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
   const [doneShoppingDialogOpen, setDoneShoppingDialogOpen] = useState(false);
+  const [foundEverythingDialogOpen, setFoundEverythingDialogOpen] = useState(false);
+  const [signupGateDialogOpen, setSignupGateDialogOpen] = useState(false);
   const [itemsNotFoundDialogOpen, setItemsNotFoundDialogOpen] = useState(false);
   const [recommendationsDialogOpen, setRecommendationsDialogOpen] = useState(false);
   const [loadingRecommendations, setLoadingRecommendations] = useState(false);
@@ -52,6 +59,10 @@ function MyListDrawerComponent({
     recommendations: Array<{ storeId: string; storeName: string; items: Array<{ id: string; name: string; icon: string | null }> }>;
     notFound: Array<{ id: string; name: string; icon: string | null }>;
   } | null>(null);
+  
+  // Toast state
+  const [toastOpen, setToastOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
 
   // Price range state
   const [priceRange, setPriceRange] = useState<PriceRange | null>(null);
@@ -251,12 +262,86 @@ function MyListDrawerComponent({
 
   const handleDoneShoppingYes = useCallback(() => {
     setDoneShoppingDialogOpen(false);
+    setFoundEverythingDialogOpen(true);
   }, []);
 
   const handleDoneShoppingNo = useCallback(() => {
+    // Restore old flow: show ItemsNotFoundDialog to select missing items
+    // Then show recommendations for other stores
     setDoneShoppingDialogOpen(false);
     setItemsNotFoundDialogOpen(true);
   }, []);
+
+  const handleClear = useCallback(async () => {
+    setFoundEverythingDialogOpen(false);
+    
+    try {
+      const response = await fetch("/api/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getDeviceHeaders(),
+        },
+        body: JSON.stringify({
+          outcome: "FOUND_ALL",
+          action: "CLEAR",
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        onClear(); // Refresh the list
+        setToastMessage("List cleared");
+        setToastOpen(true);
+      } else {
+        console.error("Failed to clear list:", data.error);
+      }
+    } catch (error) {
+      console.error("Error clearing list:", error);
+    }
+  }, [onClear]);
+
+  const handleSaveAndClear = useCallback(async () => {
+    setFoundEverythingDialogOpen(false);
+    
+    try {
+      const response = await fetch("/api/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getDeviceHeaders(),
+        },
+        body: JSON.stringify({
+          outcome: "FOUND_ALL",
+          action: "SAVE_AND_CLEAR",
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success) {
+        if (data.data.requiresAuth) {
+          // Guest trying to save - show signup gate
+          setSignupGateDialogOpen(true);
+        } else {
+          // Logged-in user - save succeeded
+          onClear(); // Refresh the list
+          setToastMessage("Saved ✅ Fresh list ready");
+          setToastOpen(true);
+        }
+      } else {
+        console.error("Failed to save and clear:", data.error);
+      }
+    } catch (error) {
+      console.error("Error saving and clearing:", error);
+    }
+  }, [onClear]);
+
+  const handleJustClear = useCallback(async () => {
+    setSignupGateDialogOpen(false);
+    await handleClear();
+  }, [handleClear]);
 
   const handleGetRecommendations = useCallback(async (selectedItemIds: string[]) => {
     if (selectedItemIds.length === 0) return;
@@ -637,7 +722,7 @@ function MyListDrawerComponent({
         </div>
       </div>
 
-      {/* Done Shopping Dialog */}
+      {/* Done Shopping Dialog (Modal 1) */}
       <DoneShoppingDialog
         isOpen={doneShoppingDialogOpen}
         onClose={() => setDoneShoppingDialogOpen(false)}
@@ -645,7 +730,29 @@ function MyListDrawerComponent({
         onNo={handleDoneShoppingNo}
       />
 
-      {/* Items Not Found Dialog */}
+      {/* Found Everything Dialog (Modal 2) */}
+      <FoundEverythingDialog
+        isOpen={foundEverythingDialogOpen}
+        onClose={() => setFoundEverythingDialogOpen(false)}
+        onClear={handleClear}
+        onSaveAndClear={handleSaveAndClear}
+      />
+
+      {/* Signup Gate Dialog (Modal 3) */}
+      <SignupGateDialog
+        isOpen={signupGateDialogOpen}
+        onClose={() => setSignupGateDialogOpen(false)}
+        onJustClear={handleJustClear}
+      />
+
+      {/* Toast */}
+      <Toast
+        message={toastMessage}
+        isOpen={toastOpen}
+        onClose={() => setToastOpen(false)}
+      />
+
+      {/* Items Not Found Dialog - user selects missing items, then gets store recommendations */}
       <ItemsNotFoundDialog
         isOpen={itemsNotFoundDialogOpen}
         onClose={() => setItemsNotFoundDialogOpen(false)}
@@ -661,6 +768,8 @@ function MyListDrawerComponent({
           onClose={() => {
             setRecommendationsDialogOpen(false);
             setRecommendations(null);
+            // List is kept as-is (no clearing) - this matches the old behavior
+            // TODO: Eventually add location-based recommendations here
           }}
           recommendations={recommendations.recommendations}
           notFound={recommendations.notFound}

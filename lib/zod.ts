@@ -255,6 +255,17 @@ export interface AppSettings {
 }
 
 // ============================================
+// Checkout Schemas
+// ============================================
+
+export const checkoutSchema = z.object({
+  outcome: z.enum(["FOUND_ALL", "MISSING_ITEMS"]),
+  action: z.enum(["CLEAR", "SAVE_AND_CLEAR", "KEEP"]),
+});
+
+export type CheckoutInput = z.infer<typeof checkoutSchema>;
+
+// ============================================
 // Validation Helpers
 // ============================================
 

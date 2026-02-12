@@ -27,6 +27,11 @@ interface RecommendationsResponse {
 /**
  * POST /api/recommendations
  * Returns store recommendations for items that were not found
+ * 
+ * TODO: Eventually add location-based recommendations:
+ * - Use user's location (city, region, postalCode from User model)
+ * - Filter/sort stores by proximity to user
+ * - Consider adding Store model with location fields (latitude, longitude, address)
  */
 export async function POST(
   request: Request
