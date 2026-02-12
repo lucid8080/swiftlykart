@@ -143,36 +143,8 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
       );
     }
 
-    // Fetch product from OpenFoodFacts
-    const offResponse = await fetch(
-      `https://world.openfoodfacts.net/api/v2/product/${barcode}.json`,
-      {
-        headers: {
-          "User-Agent": "GroceryListPWA/1.0 (contact@example.com)",
-        },
-      }
-    );
-
-    if (!offResponse.ok) {
-      return NextResponse.json(
-        { success: false, error: "Product not found in our database", code: "NOT_FOUND" },
-        { status: 404 }
-      );
-    }
-
-    const offData: OpenFoodFactsProduct = await offResponse.json();
-
-    if (offData.status === 0 || !offData.product) {
-      return NextResponse.json(
-        { success: false, error: "Product not found in our database", code: "NOT_FOUND" },
-        { status: 404 }
-      );
-    }
-
-    const product = offData.product;
-    const productName = product.product_name_en || product.product_name || "Unknown Product";
-
-    // Check if ProductVariant with this barcode already exists
+    // Check if ProductVariant with this barcode already exists in our database FIRST
+    // This allows us to skip OpenFoodFacts API call if we already have the product
     const existingVariant = await prisma.productVariant.findUnique({
       where: { barcode },
       include: {
@@ -184,12 +156,113 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
 
     let groceryItemId: string;
     let variantId: string | null = null;
+    let productName: string;
+    let product: OpenFoodFactsProduct["product"] | null = null;
 
+    // If product exists in database, use it directly (skip OpenFoodFacts API call)
     if (existingVariant) {
-      // Use existing variant
       groceryItemId = existingVariant.groceryItemId;
       variantId = existingVariant.id;
+      productName = existingVariant.groceryItem.name;
+      
+      // Skip to adding item to list (we already have everything we need)
     } else {
+      // Product doesn't exist in database, fetch from OpenFoodFacts
+      // Fetch product from OpenFoodFacts with retry logic
+    let offData: OpenFoodFactsProduct | null = null;
+    let retries = 0;
+    const maxRetries = 2;
+
+    while (retries <= maxRetries) {
+      try {
+        const offResponse = await fetch(
+          `https://world.openfoodfacts.net/api/v2/product/${barcode}.json`,
+          {
+            headers: {
+              "User-Agent": "GroceryListPWA/1.0 (contact@example.com)",
+            },
+            // Add timeout to prevent hanging (10 seconds)
+            signal: AbortSignal.timeout(10000),
+          }
+        );
+
+        // Handle rate limiting (429) or server errors (5xx) with retry
+        if (offResponse.status === 429 || (offResponse.status >= 500 && offResponse.status < 600)) {
+          if (retries < maxRetries) {
+            // Wait before retry: 1s for first retry, 2s for second
+            await new Promise(resolve => setTimeout(resolve, (retries + 1) * 1000));
+            retries++;
+            continue;
+          } else {
+            // Max retries reached
+            return NextResponse.json(
+              { 
+                success: false, 
+                error: "Service temporarily unavailable. Please try again in a moment.", 
+                code: "SERVICE_UNAVAILABLE" 
+              },
+              { status: 503 }
+            );
+          }
+        }
+
+        // Parse response
+        const parsedData: OpenFoodFactsProduct = await offResponse.json();
+        offData = parsedData;
+
+        // Handle "not found" responses (status 0 or no product)
+        if (parsedData.status === 0 || !parsedData.product) {
+          return NextResponse.json(
+            { success: false, error: "Product not found in our database", code: "NOT_FOUND" },
+            { status: 404 }
+          );
+        }
+
+        // Success - we have valid product data
+        break; // Exit retry loop
+      } catch (error: unknown) {
+        // Handle network errors, timeouts, etc.
+        if (retries < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, (retries + 1) * 1000));
+          retries++;
+          continue;
+        } else {
+          const err = error as { name?: string; message?: string };
+          if (err.name === 'AbortError' || err.message?.includes('timeout')) {
+            return NextResponse.json(
+              { 
+                success: false, 
+                error: "Request timed out. Please try again.", 
+                code: "TIMEOUT" 
+              },
+              { status: 504 }
+            );
+          }
+          return NextResponse.json(
+            { 
+              success: false, 
+              error: "Failed to fetch product information. Please try again.", 
+              code: "NETWORK_ERROR" 
+            },
+            { status: 500 }
+          );
+        }
+      }
+    }
+
+    // Final check: ensure we have valid product data
+    if (!offData || offData.status === 0 || !offData.product) {
+      return NextResponse.json(
+        { success: false, error: "Product not found in our database", code: "NOT_FOUND" },
+        { status: 404 }
+      );
+    }
+
+      // TypeScript: offData is guaranteed to be non-null and have product at this point
+      product = offData.product;
+      productName = product.product_name_en || product.product_name || "Unknown Product";
+
+      // Now create the product in our database
       // Need to create or find GroceryItem
       const categoryName = mapCategory(product.categories_tags);
       
