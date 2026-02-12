@@ -210,7 +210,9 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
       if (data.success) {
         const productName = data.data?.productName || "Product";
         setSuccess(`Added ${productName} to your list!`);
+        setProcessing(false); // Stop showing processing state
         
+        // Call onScanSuccess immediately (triggers list refresh in background)
         if (onScanSuccess) {
           onScanSuccess(productName);
         }
@@ -221,6 +223,7 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
         }, 1500);
       } else {
         setError(data.error || "Failed to add product to list");
+        setProcessing(false);
         // Resume scanning after error
         if (scannerRef.current && cameraId) {
           try {
@@ -233,7 +236,6 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
             }, 1000);
           }
         }
-        setProcessing(false);
       }
     } catch (err) {
       console.error("Error processing barcode:", err);
@@ -332,7 +334,7 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
           />
 
           {/* Processing Overlay - shows on top of camera feed */}
-          {processing && (
+          {processing && !success && (
             <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10">
               <div className="bg-background/95 rounded-lg p-6 flex flex-col items-center gap-3">
                 <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -342,7 +344,7 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
             </div>
           )}
 
-          {/* Success Overlay */}
+          {/* Success Overlay - only shows when success is true, hides processing */}
           {success && (
             <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10">
               <div className="bg-background/95 rounded-lg p-6 flex flex-col items-center gap-3">
@@ -352,7 +354,7 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
             </div>
           )}
 
-          {/* Scanning Guide Overlay */}
+          {/* Scanning Guide Overlay - only shows when scanning and not processing/success */}
           {scanning && !processing && !success && (
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-5">
               <div className="relative">

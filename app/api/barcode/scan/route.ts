@@ -155,8 +155,8 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
 
     if (!offResponse.ok) {
       return NextResponse.json(
-        { success: false, error: "Failed to fetch product from OpenFoodFacts", code: "API_ERROR" },
-        { status: 500 }
+        { success: false, error: "Product not found in our database", code: "NOT_FOUND" },
+        { status: 404 }
       );
     }
 
@@ -164,7 +164,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
 
     if (offData.status === 0 || !offData.product) {
       return NextResponse.json(
-        { success: false, error: "Product not found in OpenFoodFacts database", code: "NOT_FOUND" },
+        { success: false, error: "Product not found in our database", code: "NOT_FOUND" },
         { status: 404 }
       );
     }
@@ -286,26 +286,35 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
 
       variantId = newVariant.id;
 
-      // Create variants for other stores (without barcode, as barcode is unique)
+      // Create variants for other stores asynchronously (don't wait for this)
       // This allows users to select the product from different stores
-      for (let i = 1; i < stores.length; i++) {
-        try {
-          await prisma.productVariant.create({
-            data: {
-              groceryItemId,
-              storeId: stores[i].id,
-              name: productName,
-              imageUrl,
-              // No barcode for additional variants (barcode is unique)
-            },
-          });
-        } catch (error: unknown) {
-          // Variant might already exist (unique constraint), skip silently
-          const prismaError = error as { code?: string; message?: string };
-          if (!prismaError.message?.includes("Unique constraint") && !prismaError.code?.includes("P2002")) {
-            console.error(`Error creating variant for store ${stores[i].name}:`, prismaError.message);
-          }
-        }
+      // We do this in the background so the API responds faster
+      if (stores.length > 1) {
+        // Fire and forget - create other variants in background
+        Promise.all(
+          stores.slice(1).map(async (store) => {
+            try {
+              await prisma.productVariant.create({
+                data: {
+                  groceryItemId,
+                  storeId: store.id,
+                  name: productName,
+                  imageUrl,
+                  // No barcode for additional variants (barcode is unique)
+                },
+              });
+            } catch (error: unknown) {
+              // Variant might already exist (unique constraint), skip silently
+              const prismaError = error as { code?: string; message?: string };
+              if (!prismaError.message?.includes("Unique constraint") && !prismaError.code?.includes("P2002")) {
+                console.error(`Error creating variant for store ${store.name}:`, prismaError.message);
+              }
+            }
+          })
+        ).catch((err) => {
+          // Log but don't fail the request
+          console.error("Error creating additional variants in background:", err);
+        });
       }
     }
 
