@@ -460,8 +460,11 @@ function HomePageContent() {
         isOpen={scannerOpen}
         onClose={() => setScannerOpen(false)}
         onScanSuccess={(productName) => {
-          // Refresh list to show newly added item
-          refreshList();
+          // Refresh list in background (non-blocking)
+          // The API optimization will make this much faster now
+          refreshList().catch(() => {
+            // Silently fail - user already sees success message
+          });
         }}
       />
     </div>

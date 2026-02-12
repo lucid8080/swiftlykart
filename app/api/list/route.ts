@@ -50,9 +50,52 @@ export async function GET(): Promise<NextResponse<ApiResponse<ListWithItems | nu
       );
     }
 
-    // Calculate average prices for generic items (items without product variants)
-    const itemsWithPrices = await Promise.all(
-      list.items.map(async (item) => {
+    // Batch price calculations for generic items (items without product variants)
+    // Get all groceryItemIds that need price calculation
+    const itemsNeedingPrice = list.items.filter(
+      (item) => !(item as ListItemWithVariant).productVariant
+    );
+    const groceryItemIdsNeedingPrice = itemsNeedingPrice.map(
+      (item) => item.groceryItemId
+    );
+
+    // Single batch query to get all prices at once
+    const priceMap = new Map<string, number>();
+    if (groceryItemIdsNeedingPrice.length > 0) {
+      try {
+        const allVariants = await prisma.productVariant.findMany({
+          where: {
+            groceryItemId: { in: groceryItemIdsNeedingPrice },
+            price: { not: null },
+          },
+          select: { groceryItemId: true, price: true },
+        });
+
+        // Group by groceryItemId and calculate averages
+        const pricesByItem = new Map<string, number[]>();
+        allVariants.forEach((variant) => {
+          if (variant.price !== null) {
+            const existing = pricesByItem.get(variant.groceryItemId) || [];
+            existing.push(variant.price);
+            pricesByItem.set(variant.groceryItemId, existing);
+          }
+        });
+
+        // Calculate averages
+        pricesByItem.forEach((prices, groceryItemId) => {
+          if (prices.length > 0) {
+            const sum = prices.reduce((acc, p) => acc + p, 0);
+            priceMap.set(groceryItemId, sum / prices.length);
+          }
+        });
+      } catch (error) {
+        // If ProductVariant table doesn't exist, price remains null
+        console.log("Could not calculate average prices:", error);
+      }
+    }
+
+    // Map items with prices
+    const itemsWithPrices = list.items.map((item) => {
         let price = null;
         
         // If item has a product variant, use its price
@@ -60,30 +103,8 @@ export async function GET(): Promise<NextResponse<ApiResponse<ListWithItems | nu
         if (itemWithVariant.productVariant) {
           price = itemWithVariant.productVariant.price ?? null;
         } else {
-          // For generic items, calculate average price from all variants
-          try {
-            const variants = await prisma.productVariant.findMany({
-              where: {
-                groceryItemId: item.groceryItemId,
-                price: { not: null },
-              },
-              select: { price: true },
-            });
-
-            if (variants.length > 0) {
-              const prices = variants
-                .map((v) => v.price)
-                .filter((p): p is number => p !== null);
-              
-              if (prices.length > 0) {
-                const sum = prices.reduce((acc, p) => acc + p, 0);
-                price = sum / prices.length;
-              }
-            }
-          } catch (error) {
-            // If ProductVariant table doesn't exist, price remains null
-            console.log("Could not calculate average price:", error);
-          }
+          // Use pre-calculated price from batch query
+          price = priceMap.get(item.groceryItemId) ?? null;
         }
 
         const baseItem = {
@@ -133,8 +154,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<ListWithItems | nu
           ...baseItem,
           ...(productVariant !== undefined && { productVariant }),
         };
-      })
-    );
+      });
 
     const formattedList: ListWithItems = {
       id: list.id,
