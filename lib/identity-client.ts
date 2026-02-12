@@ -4,6 +4,8 @@
  */
 
 const ANON_VISITOR_KEY = "anonVisitorId";
+const TAG_TAP_COUNT_KEY = "tagTapCount";
+const REQUIRED_TAPS_FOR_PWA_PROMPT = 30;
 
 /**
  * Get or create anonVisitorId from localStorage
@@ -159,4 +161,45 @@ export function getIdentityHeaders(): Record<string, string> {
   return {
     "X-Anon-Visitor-Id": vid,
   };
+}
+
+/**
+ * Increment tag tap count in localStorage
+ * Called when user navigates to site via NFC tag tap
+ * @returns The new tap count after incrementing
+ */
+export function incrementTagTapCount(): number {
+  if (typeof window === "undefined") return 0;
+
+  try {
+    const currentCount = parseInt(localStorage.getItem(TAG_TAP_COUNT_KEY) || "0", 10);
+    const newCount = currentCount + 1;
+    localStorage.setItem(TAG_TAP_COUNT_KEY, newCount.toString());
+    return newCount;
+  } catch (error) {
+    console.warn("[Identity] Failed to increment tag tap count:", error);
+    return 0;
+  }
+}
+
+/**
+ * Get current tag tap count from localStorage
+ * @returns The current tap count, or 0 if not found/unavailable
+ */
+export function getTagTapCount(): number {
+  if (typeof window === "undefined") return 0;
+
+  try {
+    return parseInt(localStorage.getItem(TAG_TAP_COUNT_KEY) || "0", 10);
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Check if user has reached the required number of tag taps to show PWA prompt
+ * @returns true if tap count >= REQUIRED_TAPS_FOR_PWA_PROMPT
+ */
+export function hasReachedRequiredTapCount(): boolean {
+  return getTagTapCount() >= REQUIRED_TAPS_FOR_PWA_PROMPT;
 }

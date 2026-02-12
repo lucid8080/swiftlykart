@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { X, Download, Share, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { hasReachedRequiredTapCount } from "@/lib/identity-client";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -26,6 +27,11 @@ export function AddToHomeBanner() {
     setIsStandalone(standalone);
 
     if (standalone) return; // Don't show banner if already installed
+
+    // Check if user has reached required tag tap count (30 taps)
+    if (!hasReachedRequiredTapCount()) {
+      return; // Don't show banner until user has tapped tag 30 times
+    }
 
     // Check if iOS
     const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as unknown as { MSStream?: unknown }).MSStream;

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
-import { getAnonVisitorId } from "@/lib/identity-client";
+import { getAnonVisitorId, incrementTagTapCount } from "@/lib/identity-client";
 
 /**
  * Centralized NFC tap attribution handler.
@@ -29,6 +29,10 @@ export function TapAttribution() {
       try {
         const anonVisitorId = getAnonVisitorId();
         if (!anonVisitorId) return;
+
+        // Increment tag tap count for PWA prompt threshold
+        const newCount = incrementTagTapCount();
+        console.log(`[TapAttribution] Tag tap detected. Total taps: ${newCount}`);
 
         await fetch("/api/tap/identify", {
           method: "POST",
