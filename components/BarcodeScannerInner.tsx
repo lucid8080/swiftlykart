@@ -2,8 +2,33 @@
 
 import { useEffect, useRef, useState } from "react";
 import { X, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { getDeviceHeaders } from "@/lib/device-client";
+
+// Type for Html5Qrcode instance
+type Html5QrcodeInstance = {
+  start: (
+    cameraId: string,
+    config: {
+      fps: number;
+      qrbox: { width: number; height: number };
+      aspectRatio: number;
+      disableFlip: boolean;
+    },
+    onScanSuccess: (decodedText: string) => void,
+    onScanError: (errorMessage: string) => void
+  ) => Promise<void>;
+  stop: () => Promise<void>;
+  clear: () => Promise<void>;
+  pause: () => Promise<void>;
+  resume: () => Promise<void>;
+};
+
+type Html5QrcodeStatic = {
+  new (elementId: string): Html5QrcodeInstance;
+  getCameras: () => Promise<Array<{ id: string; label: string }>>;
+};
+
+let Html5Qrcode: Html5QrcodeStatic | null = null;
 
 interface BarcodeScannerInnerProps {
   isOpen: boolean;
@@ -11,93 +36,24 @@ interface BarcodeScannerInnerProps {
   onScanSuccess?: (productName: string) => void;
 }
 
-// Polyfill getUserMedia for older browsers
-function polyfillGetUserMedia() {
-  if (navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function') {
-    return; // Already available
-  }
-
-  // Polyfill for older browsers - use type assertion to work around readonly
-  const nav = navigator as {
-    getUserMedia?: unknown;
-    webkitGetUserMedia?: unknown;
-    mozGetUserMedia?: unknown;
-    msGetUserMedia?: unknown;
-    mediaDevices?: {
-      getUserMedia?: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
-    };
-  };
-  if (!nav.mediaDevices) {
-    nav.mediaDevices = {};
-  }
-  
-  if (!nav.mediaDevices.getUserMedia) {
-    const getUserMedia = (nav.getUserMedia || 
-                        nav.webkitGetUserMedia || 
-                        nav.mozGetUserMedia ||
-                        nav.msGetUserMedia) as ((constraints: MediaStreamConstraints, successCallback: (stream: MediaStream) => void, errorCallback: (error: unknown) => void) => void) | undefined;
-
-    if (!getUserMedia) {
-      throw new Error('getUserMedia is not supported in this browser');
-    }
-
-    nav.mediaDevices.getUserMedia = function(constraints: MediaStreamConstraints) {
-      return new Promise((resolve, reject) => {
-        getUserMedia.call(navigator, constraints, resolve, reject);
-      });
-    };
-  }
-}
-
-// Load QuaggaJS from CDN
-function loadQuaggaJS(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if ((window as { Quagga?: unknown }).Quagga) {
-      resolve();
-      return;
-    }
-
-    // Ensure getUserMedia is available before loading QuaggaJS
-    polyfillGetUserMedia();
-
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/quagga@0.12.1/dist/quagga.min.js';
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load QuaggaJS'));
-    document.head.appendChild(script);
-  });
-}
-
 export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeScannerInnerProps) {
-  const scannerRef = useRef<{ quagga?: {
-    init?: (config: unknown, callback: (err: unknown) => void) => void;
-    start?: () => void;
-    stop?: () => void;
-    onDetected?: (callback: (result: { codeResult?: { code?: string } }) => void) => void;
-    offDetected?: () => void;
-  } } | null>(null);
+  const scannerRef = useRef<Html5QrcodeInstance | null>(null);
+  const scannerContainerRef = useRef<HTMLDivElement>(null);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
-  const scannerContainerRef = useRef<HTMLDivElement>(null);
+  const [cameraId, setCameraId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
       // Cleanup when closed
-      if (scannerRef.current && scannerRef.current.quagga) {
-        try {
-          scannerRef.current.quagga.stop?.();
-          scannerRef.current.quagga.offDetected?.();
-        } catch {
-          // Ignore cleanup errors
-        }
-        scannerRef.current = null;
-      }
+      stopScanner();
       setScanning(false);
       setError(null);
       setProcessing(false);
       setSuccess(null);
+      setCameraId(null);
       return;
     }
 
@@ -105,7 +61,17 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
     const initScanner = async () => {
       if (!scannerContainerRef.current) return;
 
-      // Use QuaggaJS for barcode scanning (loaded from CDN, no npm package needed)
+      // Load html5-qrcode dynamically
+      if (typeof window === "undefined" || !Html5Qrcode) {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const html5QrcodeModule = require("html5-qrcode");
+        Html5Qrcode = html5QrcodeModule.Html5Qrcode as Html5QrcodeStatic;
+      }
+      
+      if (!Html5Qrcode) {
+        throw new Error("Failed to load html5-qrcode library");
+      }
+
       try {
         // Check if we're in a browser environment
         if (typeof window === 'undefined' || typeof navigator === 'undefined') {
@@ -113,7 +79,6 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
         }
 
         // Check if we're in a secure context (HTTPS or localhost)
-        // ngrok domains are HTTPS so they're secure
         const isSecureContext = window.isSecureContext || 
                                 location.protocol === 'https:' || 
                                 location.hostname === 'localhost' || 
@@ -126,86 +91,68 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
             "Camera access requires HTTPS or localhost. " +
             "Please access the app via https://localhost:3001 or use ngrok for phone testing."
           );
-          return; // Don't throw, just show error and return
+          return;
         }
 
-        // Ensure getUserMedia is polyfilled before loading QuaggaJS
-        try {
-          polyfillGetUserMedia();
-        } catch (err: unknown) {
-          const error = err as { message?: string };
-          throw new Error(`Camera API not available: ${error.message || "Unknown error"}`);
+        // Create Html5Qrcode instance
+        const html5QrCode = new Html5Qrcode!(scannerContainerRef.current.id);
+        scannerRef.current = html5QrCode;
+
+        // Get available cameras and prefer back camera
+        const devices = await Html5Qrcode!.getCameras() as Array<{ id: string; label: string }>;
+        if (devices.length === 0) {
+          throw new Error("No cameras found. Please check your device permissions.");
         }
 
-        // Load QuaggaJS from CDN
-        await loadQuaggaJS();
-        const Quagga = (window as { Quagga?: {
-          init?: (config: unknown, callback: (err: unknown) => void) => void;
-          start?: () => void;
-          stop?: () => void;
-          onDetected?: (callback: (result: { codeResult?: { code?: string } }) => void) => void;
-          offDetected?: () => void;
-        } }).Quagga;
+        // Prefer back camera (environment facing) for barcode scanning
+        const backCamera = devices.find((device: { id: string; label: string }) => 
+          device.label.toLowerCase().includes('back') || 
+          device.label.toLowerCase().includes('rear') ||
+          device.label.toLowerCase().includes('environment')
+        );
         
-        if (!Quagga) {
-          throw new Error("Failed to load QuaggaJS library");
-        }
+        const selectedCameraId = backCamera?.id || devices[0].id;
+        setCameraId(selectedCameraId);
 
-        // Initialize QuaggaJS
-        Quagga.init?.({
-          inputStream: {
-            name: "Live",
-            type: "LiveStream",
-            target: scannerContainerRef.current,
-            constraints: {
-              facingMode: "environment",
-              width: { min: 640 },
-              height: { min: 480 }
+        // Start scanning
+        await html5QrCode.start(
+          selectedCameraId,
+          {
+            fps: 10, // Frames per second
+            qrbox: { width: 250, height: 250 }, // Scanning box size
+            aspectRatio: 1.0, // Square aspect ratio
+            disableFlip: false, // Allow flip for better detection
+          },
+          (decodedText: string) => {
+            // Barcode detected
+            handleBarcodeScanned(decodedText);
+          },
+          (errorMessage: string) => {
+            // Ignore scanning errors (just means no barcode detected yet)
+            // Only log if it's not a "not found" error
+            if (!errorMessage.includes("No QR code") && !errorMessage.includes("No MultiFormat Readers")) {
+              console.debug("Scanning:", errorMessage);
             }
-          },
-          locator: {
-            patchSize: "medium",
-            halfSample: true
-          },
-          numOfWorkers: 2,
-          decoder: {
-            readers: ["ean_reader", "ean_8_reader", "code_128_reader", "code_39_reader", "upc_reader", "upc_e_reader"]
-          },
-          locate: true
-        }, (err: unknown) => {
-          if (err) {
-            const error = err as { message?: string };
-            console.error("Quagga initialization error:", err);
-            setError(error.message || "Failed to initialize camera. Please check permissions.");
-            setScanning(false);
-            return;
           }
-          setScanning(true);
-          setError(null);
-          Quagga.start?.();
-        });
-
-        // Handle detected barcodes
-        Quagga.onDetected?.((result: { codeResult?: { code?: string } }) => {
-          const code = result.codeResult?.code;
-          if (code) {
-            handleBarcodeScanned(code);
-          }
-        });
-
-        scannerRef.current = { quagga: Quagga };
+        );
 
         setScanning(true);
         setError(null);
       } catch (err: unknown) {
         const error = err as { message?: string };
         console.error("Scanner initialization error:", err);
-        setError(
-          error.message?.includes("Permission")
-            ? "Camera permission denied. Please allow camera access."
-            : "Failed to start camera. Please check your device settings."
-        );
+        
+        if (error.message?.includes("Permission")) {
+          setError("Camera permission denied. Please allow camera access in your browser settings.");
+        } else if (error.message?.includes("NotAllowedError")) {
+          setError("Camera access denied. Please allow camera access and try again.");
+        } else if (error.message?.includes("NotFoundError")) {
+          setError("No camera found. Please check your device has a camera.");
+        } else {
+          setError(error.message || "Failed to start camera. Please check your device settings.");
+        }
         setScanning(false);
+        stopScanner();
       }
     };
 
@@ -213,28 +160,34 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
 
     return () => {
       // Cleanup on unmount
-      if (scannerRef.current && scannerRef.current.quagga) {
-        try {
-          scannerRef.current.quagga.stop?.();
-          scannerRef.current.quagga.offDetected?.();
-        } catch {
-          // Ignore cleanup errors
-        }
-        scannerRef.current = null;
-      }
+      stopScanner();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  const stopScanner = async () => {
+    if (scannerRef.current) {
+      try {
+        // Stop scanning and clear the view
+        await scannerRef.current.stop();
+        await scannerRef.current.clear();
+      } catch (err) {
+        // Ignore cleanup errors (scanner might already be stopped)
+        console.debug("Scanner cleanup:", err);
+      }
+      scannerRef.current = null;
+    }
+  };
 
   const handleBarcodeScanned = async (barcode: string) => {
     if (processing) return; // Prevent multiple simultaneous scans
 
-    // Stop scanning
-    if (scannerRef.current && scannerRef.current.quagga) {
+    // Stop scanning but keep camera visible
+    if (scannerRef.current) {
       try {
-        scannerRef.current.quagga.stop?.();
-        setScanning(false);
+        await scannerRef.current.pause();
       } catch (err) {
-        // Ignore stop errors
+        console.debug("Error pausing scanner:", err);
       }
     }
 
@@ -262,38 +215,79 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
           onScanSuccess(productName);
         }
 
-        // Close after a short delay
+        // Close after a short delay to show success message
         setTimeout(() => {
           onClose();
         }, 1500);
       } else {
         setError(data.error || "Failed to add product to list");
-        // Restart scanning after error
-        setTimeout(() => {
-          restartScanning();
-        }, 2000);
+        // Resume scanning after error
+        if (scannerRef.current && cameraId) {
+          try {
+            await scannerRef.current.resume();
+          } catch (err) {
+            console.debug("Error resuming scanner:", err);
+            // If resume fails, restart scanner
+            setTimeout(() => {
+              restartScanning();
+            }, 1000);
+          }
+        }
+        setProcessing(false);
       }
     } catch (err) {
       console.error("Error processing barcode:", err);
       setError("Failed to process barcode. Please try again.");
-      // Restart scanning after error
-      setTimeout(() => {
-        restartScanning();
-      }, 2000);
-    } finally {
+      // Resume scanning after error
+      if (scannerRef.current && cameraId) {
+        try {
+          await scannerRef.current.resume();
+        } catch (err) {
+          console.debug("Error resuming scanner:", err);
+          // If resume fails, restart scanner
+          setTimeout(() => {
+            restartScanning();
+          }, 1000);
+        }
+      }
       setProcessing(false);
     }
   };
 
   const restartScanning = async () => {
-    if (!isOpen) return;
-    // Re-initialize scanner
-    const initScanner = async () => {
-      if (!scannerContainerRef.current) return;
-      // Re-run the initialization logic
-      // This is handled by the useEffect when isOpen changes
-    };
-    await initScanner();
+    if (!isOpen || !scannerContainerRef.current || !cameraId || !Html5Qrcode) return;
+
+    try {
+      await stopScanner();
+      
+      const html5QrCode = new Html5Qrcode(scannerContainerRef.current.id);
+      scannerRef.current = html5QrCode;
+
+      await html5QrCode.start(
+        cameraId,
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0,
+          disableFlip: false,
+        },
+        (decodedText: string) => {
+          handleBarcodeScanned(decodedText);
+        },
+        (errorMessage: string) => {
+          if (!errorMessage.includes("No QR code") && !errorMessage.includes("No MultiFormat Readers")) {
+            console.debug("Scanning:", errorMessage);
+          }
+        }
+      );
+
+      setScanning(true);
+      setError(null);
+      setProcessing(false);
+    } catch (err) {
+      console.error("Error restarting scanner:", err);
+      setError("Failed to restart camera. Please close and try again.");
+    }
   };
 
   if (!isOpen) return null;
@@ -334,12 +328,33 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
             id="barcode-scanner-container"
             ref={scannerContainerRef}
             className="w-full"
-            style={{ minHeight: "400px" }}
+            style={{ minHeight: "400px", position: "relative" }}
           />
 
-          {/* Overlay with scanning guide */}
-          {scanning && (
-            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+          {/* Processing Overlay - shows on top of camera feed */}
+          {processing && (
+            <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10">
+              <div className="bg-background/95 rounded-lg p-6 flex flex-col items-center gap-3">
+                <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                <p className="text-sm font-medium text-foreground">Processing barcode...</p>
+                <p className="text-xs text-muted-foreground">Looking up product</p>
+              </div>
+            </div>
+          )}
+
+          {/* Success Overlay */}
+          {success && (
+            <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10">
+              <div className="bg-background/95 rounded-lg p-6 flex flex-col items-center gap-3">
+                <CheckCircle2 className="w-8 h-8 text-green-600 dark:text-green-400" />
+                <p className="text-sm font-medium text-foreground">{success}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Scanning Guide Overlay */}
+          {scanning && !processing && !success && (
+            <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-5">
               <div className="relative">
                 {/* Scanning box */}
                 <div className="w-64 h-64 border-2 border-primary-500 rounded-lg" />
@@ -355,24 +370,10 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
 
         {/* Status Messages */}
         <div className="p-4 space-y-2">
-          {processing && (
-            <div className="flex items-center gap-2 text-primary">
-              <Loader2 className="w-5 h-5 animate-spin" />
-              <p className="text-sm">Processing barcode...</p>
-            </div>
-          )}
-
           {error && (
             <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
               <AlertCircle className="w-5 h-5 shrink-0" />
               <p className="text-sm">{error}</p>
-            </div>
-          )}
-
-          {success && (
-            <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
-              <CheckCircle2 className="w-5 h-5 shrink-0" />
-              <p className="text-sm">{success}</p>
             </div>
           )}
 

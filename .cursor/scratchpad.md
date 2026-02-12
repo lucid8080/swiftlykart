@@ -426,18 +426,24 @@ Add to `prisma/seed.ts` (or create `prisma/seed-nfc.ts`):
 
 *(Previous feedback preserved below)*
 
-**Barcode Scanning Feature Implementation Complete**
+**Barcode Scanning Feature — Issues & Fixes (Feb 2026)**
 
-All components have been implemented:
-1. ✅ Database schema updated with barcode field
-2. ✅ Migration file created (needs to be applied)
-3. ✅ BarcodeScanner component created with camera access
-4. ✅ OpenFoodFacts API integration endpoint created
-5. ✅ Product matching/creation logic implemented
-6. ✅ Scanner button added to Header
-7. ✅ Integration with main page complete
+**Issues Identified:**
+1. ❌ Camera view positioning incorrect (image at top, scanning box in black area)
+2. ❌ Not working on S20 (black screen after scan)
+3. ❌ Poor UX during processing (black screen, no loading indication)
+4. ❌ Using QuaggaJS which has compatibility issues
 
-**Note:** The migration file has been created at `prisma/migrations/20250208000000_add_barcode_to_product_variant/migration.sql` but needs to be applied to the database.
+**Fixes Implemented:**
+1. ✅ Replaced QuaggaJS with html5-qrcode library (better mobile support, cleaner API)
+2. ✅ Fixed camera view layout — html5-qrcode handles positioning automatically
+3. ✅ Keep camera feed visible during API processing with overlay loading indicator
+4. ✅ Improved error handling and cleanup for newer Android devices (proper pause/resume)
+5. ✅ Added better visual feedback — processing overlay shows on top of camera, success message with delay
+6. ✅ Better camera selection — prefers back camera for barcode scanning
+7. ✅ Proper cleanup — uses pause/resume instead of stop/restart for better UX
+
+**Status:** ✅ Complete — ready for testing on S10 and S20 devices
 
 ---
 
