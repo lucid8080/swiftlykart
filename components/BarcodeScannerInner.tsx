@@ -44,6 +44,8 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
   const [processing, setProcessing] = useState(false);
   const [success, setSuccess] = useState<string | null>(null);
   const [cameraId, setCameraId] = useState<string | null>(null);
+  const lastScannedBarcodeRef = useRef<string | null>(null);
+  const lastScanTimeRef = useRef<number>(0);
 
   useEffect(() => {
     if (!isOpen) {
@@ -180,7 +182,26 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
   };
 
   const handleBarcodeScanned = async (barcode: string) => {
-    if (processing) return; // Prevent multiple simultaneous scans
+    // Debounce: prevent processing the same barcode multiple times in quick succession
+    const now = Date.now();
+    const timeSinceLastScan = now - lastScanTimeRef.current;
+    
+    // If same barcode scanned within 2 seconds, ignore it
+    if (barcode === lastScannedBarcodeRef.current && timeSinceLastScan < 2000) {
+      console.debug("Ignoring duplicate scan:", barcode);
+      return;
+    }
+    
+    if (processing) {
+      console.debug("Already processing a scan, ignoring:", barcode);
+      return; // Prevent multiple simultaneous scans
+    }
+
+    // Update refs
+    lastScannedBarcodeRef.current = barcode;
+    lastScanTimeRef.current = now;
+
+    console.log("Processing barcode scan:", barcode);
 
     // Stop scanning but keep camera visible
     if (scannerRef.current) {
@@ -222,7 +243,9 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
           onClose();
         }, 1500);
       } else {
-        setError(data.error || "Failed to add product to list");
+        const errorMessage = data.error || "Failed to add product to list";
+        console.error("Barcode scan failed:", { barcode, error: errorMessage, code: data.code });
+        setError(errorMessage);
         setProcessing(false);
         // Resume scanning after error
         if (scannerRef.current && cameraId) {
@@ -238,7 +261,7 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
         }
       }
     } catch (err) {
-      console.error("Error processing barcode:", err);
+      console.error("Error processing barcode:", { barcode, error: err });
       setError("Failed to process barcode. Please try again.");
       // Resume scanning after error
       if (scannerRef.current && cameraId) {

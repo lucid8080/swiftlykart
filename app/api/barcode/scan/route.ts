@@ -145,6 +145,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
 
     // Check if ProductVariant with this barcode already exists in our database FIRST
     // This allows us to skip OpenFoodFacts API call if we already have the product
+    console.log(`[Barcode Scan] Checking database for barcode: ${barcode}`);
     const existingVariant = await prisma.productVariant.findUnique({
       where: { barcode },
       include: {
@@ -161,12 +162,14 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
 
     // If product exists in database, use it directly (skip OpenFoodFacts API call)
     if (existingVariant) {
+      console.log(`[Barcode Scan] Found existing product in database: ${existingVariant.groceryItem.name}`);
       groceryItemId = existingVariant.groceryItemId;
       variantId = existingVariant.id;
       productName = existingVariant.groceryItem.name;
       
       // Skip to adding item to list (we already have everything we need)
     } else {
+      console.log(`[Barcode Scan] Product not in database, fetching from OpenFoodFacts: ${barcode}`);
       // Product doesn't exist in database, fetch from OpenFoodFacts
       // Fetch product from OpenFoodFacts with retry logic
     let offData: OpenFoodFactsProduct | null = null;
@@ -405,7 +408,9 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
     }
 
     // Toggle item (adds if not present, removes if present)
+    console.log(`[Barcode Scan] Adding item to list: ${productName} (groceryItemId: ${groceryItemId}, variantId: ${variantId})`);
     const result = await toggleListItem(list.id, groceryItemId, variantId);
+    console.log(`[Barcode Scan] Successfully added item to list: ${productName}`);
 
     return NextResponse.json({
       success: true,
