@@ -191,7 +191,7 @@ async function aggregateSiteStats(
       where: {
         occurredAt: dateRange,
         isDuplicate: false,
-        anonVisitorId: { not: null },
+        anonVisitorId: { isNot: null },
       },
     }),
 
@@ -277,7 +277,7 @@ async function aggregateBatchStats(
         occurredAt: dateRange,
         isDuplicate: false,
         batchId: group.batchId,
-        anonVisitorId: { not: null },
+        anonVisitorId: { isNot: null },
       },
     });
 
@@ -336,7 +336,7 @@ async function aggregateTagStats(
         occurredAt: dateRange,
         isDuplicate: false,
         tagId: group.tagId,
-        anonVisitorId: { not: null },
+        anonVisitorId: { isNot: null },
       },
     });
 
@@ -547,7 +547,7 @@ async function aggregateVisitorStats(
     where: {
       occurredAt: dateRange,
       isDuplicate: false,
-      visitorId: { not: null },
+      visitorId: { isNot: null },
     },
     _count: { id: true },
   });
@@ -565,7 +565,6 @@ async function aggregateVisitorStats(
           occurredAt: dateRange,
           isDuplicate: false,
           visitorId,
-          tagId: { not: null },
         },
         select: { tagId: true },
         distinct: ["tagId"],
@@ -577,7 +576,6 @@ async function aggregateVisitorStats(
           occurredAt: dateRange,
           isDuplicate: false,
           visitorId,
-          batchId: { not: null },
         },
         select: { batchId: true },
         distinct: ["batchId"],
