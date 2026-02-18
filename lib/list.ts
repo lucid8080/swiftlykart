@@ -499,6 +499,89 @@ export async function toggleListItem(
 }
 
 /**
+ * Ensure item is in list (always adds/activates, never removes)
+ * This is used for barcode scanning where we always want to add items
+ * Supports both generic items and store-specific product variants
+ */
+export async function ensureListItem(
+  listId: string,
+  groceryItemId: string,
+  productVariantId?: string | null
+): Promise<{ active: boolean }> {
+  try {
+    // Try to use the new constraint with productVariantId (if migration applied)
+    // Check if item exists with this specific combination
+    const existingItem = await prisma.listItem.findFirst({
+      where: {
+        listId,
+        groceryItemId,
+        productVariantId: productVariantId || null,
+      },
+    });
+
+    if (existingItem) {
+      // If item exists but is inactive, activate it; if already active, keep it active
+      if (!existingItem.active) {
+        const updated = await prisma.listItem.update({
+          where: { id: existingItem.id },
+          data: { active: true },
+        });
+        return { active: updated.active };
+      }
+      return { active: true };
+    } else {
+      // Create new item
+      await prisma.listItem.create({
+        data: {
+          listId,
+          groceryItemId,
+          productVariantId: productVariantId || null,
+          active: true,
+        },
+      });
+      return { active: true };
+    }
+  } catch (error: unknown) {
+    // If productVariantId field doesn't exist (migration not applied), fall back to old behavior
+    const prismaError = error as { code?: string; message?: string };
+    if (prismaError?.code === 'P2009' || prismaError?.message?.includes('Unknown column') || prismaError?.message?.includes('productVariantId')) {
+      // Fallback to old constraint (without productVariantId) - use findFirst instead
+      const existingItem = await prisma.listItem.findFirst({
+        where: {
+          listId,
+          groceryItemId,
+          productVariantId: null,
+        },
+      });
+
+      if (existingItem) {
+        // If item exists but is inactive, activate it; if already active, keep it active
+        if (!existingItem.active) {
+          const updated = await prisma.listItem.update({
+            where: { id: existingItem.id },
+            data: { active: true },
+          });
+          return { active: updated.active };
+        }
+        return { active: true };
+      } else {
+        // Create new item (without productVariantId)
+        await prisma.listItem.create({
+          data: {
+            listId,
+            groceryItemId,
+            active: true,
+          },
+        });
+        return { active: true };
+      }
+    }
+    // Re-throw if it's a different error
+    throw error;
+  }
+}
+
+/**
  * Clear all items from list (mark inactive)
  */
 export async function clearListItems(listId: string): Promise<void> {

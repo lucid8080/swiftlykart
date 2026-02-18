@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { resolveCurrentList, toggleListItem } from "@/lib/list";
+import { resolveCurrentList, ensureListItem } from "@/lib/list";
 import type { ApiResponse } from "@/lib/zod";
 
 interface OpenFoodFactsProduct {
@@ -407,9 +407,9 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
       );
     }
 
-    // Toggle item (adds if not present, removes if present)
+    // Always ensure item is added (never removes - scanning should always add items)
     console.log(`[Barcode Scan] Adding item to list: ${productName} (groceryItemId: ${groceryItemId}, variantId: ${variantId})`);
-    const result = await toggleListItem(list.id, groceryItemId, variantId);
+    const result = await ensureListItem(list.id, groceryItemId, variantId);
     console.log(`[Barcode Scan] Successfully added item to list: ${productName}`);
 
     return NextResponse.json({
