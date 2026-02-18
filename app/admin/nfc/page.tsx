@@ -103,6 +103,7 @@ export default function NfcDashboardPage() {
     { href: "/admin/nfc/tap-events", label: "Tap Events", icon: Zap, desc: "Browse tap logs" },
     { href: "/admin/nfc/tag-generator", label: "Tag Generator", icon: TrendingUp, desc: "Generate & export tags" },
     { href: "/admin/nfc/my-list-analytics", label: "My List Analytics", icon: ShoppingCart, desc: "Item purchase analytics" },
+    { href: "/admin/executive", label: "Executive View", icon: BarChart3, desc: "30-day KPI overview" },
   ];
 
   return (

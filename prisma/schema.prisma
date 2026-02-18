@@ -207,29 +207,31 @@ model SavedListItem {
 
 // NFC Tag Batches (campaign grouping)
 model TagBatch {
-  id          String     @id @default(uuid())
-  slug        String     @unique // e.g. "homedepot-2026-q1"
+  id          String            @id @default(uuid())
+  slug        String            @unique // e.g. "homedepot-2026-q1"
   name        String // e.g. "Home Depot Q1 2026"
   description String?
   tags        NfcTag[]
   tapEvents   TapEvent[]
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  dailyStats  DailyBatchStats[] // aggregated daily stats
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 }
 
 // Individual NFC Tags
 model NfcTag {
-  id           String     @id @default(uuid()) // internal ID
-  publicUuid   String     @unique @default(uuid()) // UUIDv4 used in URL (not guessable)
+  id           String          @id @default(uuid()) // internal ID
+  publicUuid   String          @unique @default(uuid()) // UUIDv4 used in URL (not guessable)
   batchId      String
-  batch        TagBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  batch        TagBatch        @relation(fields: [batchId], references: [id], onDelete: Cascade)
   label        String? // human label like "HD Tag 001"
-  status       String     @default("active") // active | disabled
+  status       String          @default("active") // active | disabled
   linkedUserId String? // User who "owns" this tag — all taps attributed to them
-  linkedUser   User?      @relation("LinkedNfcTags", fields: [linkedUserId], references: [id], onDelete: SetNull)
+  linkedUser   User?           @relation("LinkedNfcTags", fields: [linkedUserId], references: [id], onDelete: SetNull)
   tapEvents    TapEvent[]
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  dailyStats   DailyTagStats[] // aggregated daily stats
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 
   @@index([batchId])
   @@index([linkedUserId])
@@ -269,6 +271,8 @@ model TapEvent {
   @@index([occurredAt])
   @@index([ipHash, userAgent])
   @@index([userId]) // for user queries
+  @@index([tagId, occurredAt]) // compound: per-tag daily aggregation
+  @@index([batchId, occurredAt]) // compound: per-batch daily aggregation
 }
 
 // Anonymous Visitors (NFC tappers tracked via localStorage ID)
@@ -287,6 +291,7 @@ model Visitor {
   tapEvents         TapEvent[]
   myLists           MyList[]
   identityClaims    IdentityClaim[] // audit trail of claims
+  dailyStats        DailyVisitorStats[] // aggregated daily visitor stats
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 }
@@ -306,6 +311,8 @@ model MyList {
   updatedAt      DateTime     @updatedAt
 
   @@index([ownerUserId]) // for user queries
+  @@index([ownerUserId, updatedAt]) // compound: user list activity queries
+  @@index([createdAt]) // for daily lists-created aggregation
 }
 
 // My List Items
@@ -327,6 +334,7 @@ model MyListItem {
   @@unique([listId, itemKey])
   @@index([itemKey])
   @@index([purchasedAt])
+  @@index([lastAddedAt]) // for daily items-added aggregation
 }
 
 // Item Catalog (canonical items for MyList)
@@ -372,4 +380,90 @@ model AppConfig {
   id            String   @id @default("global")
   showPriceRange Boolean  @default(true)
   updatedAt      DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════════════
+// Reporting Aggregated Snapshot Tables (write by job only)
+// ═══════════════════════════════════════════════════════
+
+// Site-wide daily stats (one row per calendar day)
+model DailySiteStats {
+  id                String   @id @default(uuid())
+  date              DateTime @unique @db.Date // one row per calendar day
+  tapsTotal         Int      @default(0)
+  uniqueVisitorsEst Int      @default(0) // distinct anonVisitorId + ipHash+UA fallback
+  usersNew          Int      @default(0) // new User accounts created that day
+  usersActiveEst    Int      @default(0) // unique users/visitors that tapped that day
+  listsCreated      Int      @default(0) // MyList rows created that day
+  itemsAdded        Int      @default(0) // MyListItem rows added that day
+  itemsPurchased    Int      @default(0) // MyListItem rows purchased that day
+  updatedAt         DateTime @updatedAt
+}
+
+// Per-batch daily stats
+model DailyBatchStats {
+  id                String   @id @default(uuid())
+  date              DateTime @db.Date
+  batchId           String
+  batch             TagBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  tapsTotal         Int      @default(0)
+  uniqueVisitorsEst Int      @default(0)
+  signupsAttributed Int      @default(0) // placeholder, set 0 for now
+  listsCreated      Int      @default(0)
+  itemsAdded        Int      @default(0)
+  itemsPurchased    Int      @default(0)
+
+  @@unique([date, batchId])
+  @@index([batchId])
+}
+
+// Per-tag daily stats
+model DailyTagStats {
+  id                String   @id @default(uuid())
+  date              DateTime @db.Date
+  tagId             String
+  tag               NfcTag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  tapsTotal         Int      @default(0)
+  uniqueVisitorsEst Int      @default(0)
+  updatedAt         DateTime @updatedAt
+
+  @@unique([date, tagId])
+  @@index([tagId])
+}
+
+// Per-item daily stats (MyListItem aggregation)
+model DailyItemStats {
+  id             String   @id @default(uuid())
+  date           DateTime @db.Date
+  itemKey        String // canonical key like "bananas"
+  addedCount     Int      @default(0)
+  purchasedCount Int      @default(0)
+  updatedAt      DateTime @updatedAt
+
+  @@unique([date, itemKey])
+  @@index([itemKey])
+}
+
+// Per-visitor daily stats (for power user scoring)
+model DailyVisitorStats {
+  id             String   @id @default(uuid())
+  date           DateTime @db.Date // date-only semantics
+  visitorId      String
+  visitor        Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  userId         String?  // nullable; filled when visitor is linked to a user
+  taps           Int      @default(0)
+  tagsTapped     Int      @default(0)   // distinct tagId count for that date
+  batchesTapped  Int      @default(0)   // distinct batchId count for that date
+  listsCreated   Int      @default(0)   // if easy to compute; else leave 0 for now
+  itemsAdded     Int      @default(0)   // if easy to compute; else leave 0 for now
+  itemsPurchased Int      @default(0)   // if easy; else 0
+  score          Int      @default(0)
+  isPowerUser    Boolean  @default(false)
+  updatedAt      DateTime @updatedAt
+
+  @@unique([date, visitorId])
+  @@index([date])
+  @@index([visitorId])
+  @@index([userId])
+  @@index([date, score])
 }

@@ -393,14 +393,15 @@ function MyListDrawerComponent({
   // Desktop sidebar
   if (isDesktop) {
     return (
-      <aside
-        className={cn(
-          "fixed top-0 right-0 h-full w-80",
-          "bg-card border-l border-border",
-          "flex flex-col",
-          "shadow-xl"
-        )}
-      >
+      <>
+        <aside
+          className={cn(
+            "fixed top-0 right-0 h-full w-80",
+            "bg-card border-l border-border",
+            "flex flex-col",
+            "shadow-xl"
+          )}
+        >
         {/* Header */}
         <div className="p-4 border-b border-border space-y-3">
           {/* First row: Checked Out and My List */}
@@ -528,6 +529,56 @@ function MyListDrawerComponent({
           )}
         </div>
       </aside>
+
+      {/* Dialogs - shared between desktop and mobile */}
+      <DoneShoppingDialog
+        isOpen={doneShoppingDialogOpen}
+        onClose={() => setDoneShoppingDialogOpen(false)}
+        onYes={handleDoneShoppingYes}
+        onNo={handleDoneShoppingNo}
+      />
+
+      <FoundEverythingDialog
+        isOpen={foundEverythingDialogOpen}
+        onClose={() => setFoundEverythingDialogOpen(false)}
+        onClear={handleClear}
+        onSaveAndClear={handleSaveAndClear}
+      />
+
+      <SignupGateDialog
+        isOpen={signupGateDialogOpen}
+        onClose={() => setSignupGateDialogOpen(false)}
+        onJustClear={handleJustClear}
+      />
+
+      <Toast
+        message={toastMessage}
+        isOpen={toastOpen}
+        onClose={() => setToastOpen(false)}
+      />
+
+      <ItemsNotFoundDialog
+        isOpen={itemsNotFoundDialogOpen}
+        onClose={() => setItemsNotFoundDialogOpen(false)}
+        items={itemsForDialog}
+        onGetRecommendations={handleGetRecommendations}
+        isLoading={loadingRecommendations}
+      />
+
+      {recommendations && (
+        <RecommendationsDisplay
+          isOpen={recommendationsDialogOpen}
+          onClose={() => {
+            setRecommendationsDialogOpen(false);
+            setRecommendations(null);
+            // List is kept as-is (no clearing) - this matches the old behavior
+            // TODO: Eventually add location-based recommendations here
+          }}
+          recommendations={recommendations.recommendations}
+          notFound={recommendations.notFound}
+        />
+      )}
+    </>
     );
   }
 
