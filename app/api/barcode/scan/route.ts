@@ -132,9 +132,10 @@ async function getOrCreateStores(storeNames: string[]): Promise<Array<{ id: stri
  * Scans a barcode, fetches product from OpenFoodFacts, and adds to list
  */
 export async function POST(request: Request): Promise<NextResponse<ApiResponse>> {
+  let barcode: string | undefined;
   try {
     const body = await request.json();
-    const { barcode } = body;
+    barcode = body.barcode;
 
     if (!barcode || typeof barcode !== "string") {
       return NextResponse.json(
@@ -424,7 +425,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
   } catch (error) {
     const errorDetails = error as { code?: string; message?: string; name?: string };
     console.error("[Barcode Scan] Error scanning barcode:", {
-      barcode,
+      barcode: barcode || "unknown",
       errorCode: errorDetails?.code,
       errorMessage: errorDetails?.message,
       errorName: errorDetails?.name,
