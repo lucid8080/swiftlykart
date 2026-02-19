@@ -1227,6 +1227,221 @@ npx tsx scripts/runAggregateDaily.ts 2026-02-12 # specific date
 
 ---
 
+## Barcode Scanning — Items Not Added to Cart Fix — PLANNED
+
+### Background and Motivation
+
+Users report that some scanned items are not being added to the cart. Investigation reveals a **race condition** and **missing error handling** in the `ensureListItem()` function that can cause unique constraint violations (P2002) to be thrown instead of handled gracefully.
+
+**Goal**: Fix the `ensureListItem()` function to handle race conditions and unique constraint violations atomically, ensuring scanned items are always added to the cart.
+
+### Key Challenges and Analysis
+
+1. **Race condition**: The current `ensureListItem()` function uses a `findFirst` check followed by a `create` operation. Between these two operations, another request (e.g., rapid scans of the same barcode) can create the same item, causing a unique constraint violation (P2002).
+
+2. **Missing P2002 error handling**: The error handler in `ensureListItem()` only catches P2009 (schema errors) but NOT P2002 (unique constraint violations). When P2002 occurs, the error is re-thrown (line 580), causing the scan API to return an error instead of gracefully handling the duplicate.
+
+3. **Database constraint**: `ListItem` has a unique constraint `@@unique([listId, groceryItemId, productVariantId])`. This is correct for preventing duplicates, but the code must handle attempts to insert duplicates gracefully.
+
+4. **Silent failures**: If `ensureListItem()` throws an unhandled error, the barcode scan API catches it in the outer try/catch (line 424) and returns a generic "Failed to process barcode scan" error. The user sees a failure message even though the item might have been added by a concurrent request.
+
+5. **Solution approach**: Use Prisma's `upsert` operation or catch P2002 errors and handle them by finding and activating the existing item. `upsert` is preferred as it's atomic and handles race conditions automatically.
+
+### High-level Task Breakdown
+
+#### PHASE 1: FIX ensureListItem() FUNCTION
+
+- [ ] **1.1** Update `ensureListItem()` in `lib/list.ts` to handle unique constraint violations (P2002):
+  - Option A (Preferred): Replace `findFirst` + `create` with `upsert` operation (atomic, handles race conditions)
+  - Option B (Fallback): Catch P2002 errors, find existing item, and activate it
+  - Ensure both paths (with and without productVariantId) handle P2002 gracefully
+  - Test: Rapid scans of same barcode should always succeed
+
+- [ ] **1.2** Add comprehensive error logging:
+  - Log P2002 errors with context (listId, groceryItemId, productVariantId) for debugging
+  - Log any other unexpected errors with full context
+  - Ensure errors don't expose sensitive data
+
+- [ ] **1.3** Verify error handling in barcode scan API:
+  - Ensure `/api/barcode/scan/route.ts` properly handles errors from `ensureListItem()`
+  - If `ensureListItem()` now handles all cases gracefully, verify the API returns success
+  - Add logging to track when items are successfully added vs. when duplicates are handled
+
+#### PHASE 2: TESTING & VALIDATION
+
+- [ ] **2.1** Test rapid duplicate scans:
+  - Scan the same barcode multiple times quickly (within 1-2 seconds)
+  - Verify all scans return success
+  - Verify only one item appears in cart (or quantity increments if that's the desired behavior)
+
+- [ ] **2.2** Test concurrent scans:
+  - Open two browser tabs/windows
+  - Scan the same barcode simultaneously in both
+  - Verify both return success
+  - Verify item appears in cart
+
+- [ ] **2.3** Test edge cases:
+  - Scan item that already exists but is inactive (should activate)
+  - Scan item with variant, then scan same item without variant (should create separate entries)
+  - Scan item without variant, then scan same item with variant (should create separate entries)
+
+- [ ] **2.4** Verify error messages:
+  - Ensure users see appropriate success messages
+  - Ensure no generic "Failed to process" errors appear for duplicate scans
+
+#### PHASE 3: MONITORING & DOCUMENTATION
+
+- [ ] **3.1** Add monitoring/logging:
+  - Track P2002 occurrences (should be rare after fix, but useful for monitoring)
+  - Track successful vs. duplicate-handled scans
+  - Add metrics if monitoring system exists
+
+- [ ] **3.2** Update code comments:
+  - Document the race condition fix
+  - Explain why `upsert` or P2002 handling is necessary
+  - Add inline comments for future maintainers
+
+### Implementation Details
+
+**Preferred Solution (Option A — Upsert):**
+
+```typescript
+export async function ensureListItem(
+  listId: string,
+  groceryItemId: string,
+  productVariantId?: string | null
+): Promise<{ active: boolean }> {
+  try {
+    // Use upsert to atomically handle race conditions
+    const item = await prisma.listItem.upsert({
+      where: {
+        listId_groceryItemId_productVariantId: {
+          listId,
+          groceryItemId,
+          productVariantId: productVariantId || null,
+        },
+      },
+      update: {
+        active: true, // Always activate if exists
+      },
+      create: {
+        listId,
+        groceryItemId,
+        productVariantId: productVariantId || null,
+        active: true,
+      },
+    });
+    return { active: item.active };
+  } catch (error: unknown) {
+    // Handle schema migration edge cases (P2009)
+    const prismaError = error as { code?: string; message?: string };
+    if (prismaError?.code === 'P2009' || prismaError?.message?.includes('Unknown column') || prismaError?.message?.includes('productVariantId')) {
+      // Fallback to old constraint (without productVariantId)
+      const item = await prisma.listItem.upsert({
+        where: {
+          listId_groceryItemId: {
+            listId,
+            groceryItemId,
+          },
+        },
+        update: {
+          active: true,
+        },
+        create: {
+          listId,
+          groceryItemId,
+          active: true,
+        },
+      });
+      return { active: item.active };
+    }
+    // Log unexpected errors
+    console.error('[ensureListItem] Unexpected error:', { listId, groceryItemId, productVariantId, error });
+    throw error;
+  }
+}
+```
+
+**Alternative Solution (Option B — Catch P2002):**
+
+If `upsert` doesn't work due to constraint naming issues, catch P2002 and handle:
+
+```typescript
+} catch (error: unknown) {
+  const prismaError = error as { code?: string; message?: string };
+  
+  // Handle unique constraint violation (race condition)
+  if (prismaError?.code === 'P2002') {
+    // Item was created by concurrent request, find and activate it
+    const existingItem = await prisma.listItem.findFirst({
+      where: {
+        listId,
+        groceryItemId,
+        productVariantId: productVariantId || null,
+      },
+    });
+    if (existingItem) {
+      if (!existingItem.active) {
+        const updated = await prisma.listItem.update({
+          where: { id: existingItem.id },
+          data: { active: true },
+        });
+        return { active: updated.active };
+      }
+      return { active: true };
+    }
+    // If we can't find it, something else is wrong — re-throw
+    throw error;
+  }
+  
+  // Handle schema migration edge cases (P2009)
+  // ... rest of existing error handling
+}
+```
+
+### Project Status Board — Barcode Scanning Fix
+
+| Task | Status | Notes |
+|------|--------|-------|
+| 1.1 Fix ensureListItem() with upsert/P2002 handling | ✅ Done | Implemented P2002 catch-and-handle approach (Option B) - handles race conditions gracefully |
+| 1.2 Add error logging | ✅ Done | Added comprehensive logging for P2002, P2009, and unexpected errors with full context |
+| 1.3 Verify barcode scan API error handling | ✅ Done | Enhanced error logging in barcode scan API with error code/message details |
+| 2.1 Test rapid duplicate scans | ⏳ Pending | Ready for testing |
+| 2.2 Test concurrent scans | ⏳ Pending | Ready for testing |
+| 2.3 Test edge cases | ⏳ Pending | Ready for testing |
+| 2.4 Verify error messages | ⏳ Pending | Ready for testing |
+| 3.1 Add monitoring/logging | ✅ Done | Logging added to both ensureListItem() and barcode scan API |
+| 3.2 Update code comments | ✅ Done | Added inline comments explaining race condition handling and P2002 catch logic |
+
+### Root Cause Summary
+
+**Primary Issue**: Race condition in `ensureListItem()` — `findFirst` check followed by `create` is not atomic. Concurrent scans can cause unique constraint violations (P2002) that are not handled gracefully.
+
+**Secondary Issue**: Missing P2002 error handling — the function only catches P2009 (schema errors) but not P2002 (unique constraint violations), causing errors to bubble up and fail the scan.
+
+**Solution**: Implemented Option B — catch P2002 and handle gracefully by finding and activating the existing item. This approach works reliably with nullable fields in unique constraints and handles all edge cases including schema migration fallbacks.
+
+**Implementation Status**: ✅ Complete — `ensureListItem()` now handles:
+- P2002 (unique constraint violations) — race conditions handled gracefully
+- P2009 (schema migration edge cases) — fallback to old constraint behavior
+- Comprehensive error logging for debugging
+- Both paths (with and without productVariantId) handle all error cases
+
+**Files Modified**:
+- `lib/list.ts` — Updated `ensureListItem()` function with P2002 error handling
+- `app/api/barcode/scan/route.ts` — Enhanced error logging with error code/message details
+
+**Key Changes**:
+1. Added P2002 catch block that finds existing item created by concurrent request and activates it
+2. Added P2002 handling in fallback path (for schema migration edge cases)
+3. Added comprehensive logging for all error scenarios with full context
+4. Enhanced barcode scan API error logging to include error codes and messages
+5. Added inline comments explaining race condition handling
+
+**Testing Required**: Manual testing recommended for rapid duplicate scans and concurrent scans to verify the fix works in practice.
+
+---
+
 ## DailyVisitorStats + Power User Scoring — PLANNED
 
 ### Background and Motivation

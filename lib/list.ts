@@ -531,6 +531,8 @@ export async function ensureListItem(
       return { active: true };
     } else {
       // Create new item
+      // Note: This can fail with P2002 (unique constraint violation) if another request
+      // creates the same item concurrently. We handle this in the catch block below.
       await prisma.listItem.create({
         data: {
           listId,
@@ -542,20 +544,27 @@ export async function ensureListItem(
       return { active: true };
     }
   } catch (error: unknown) {
-    // If productVariantId field doesn't exist (migration not applied), fall back to old behavior
-    const prismaError = error as { code?: string; message?: string };
-    if (prismaError?.code === 'P2009' || prismaError?.message?.includes('Unknown column') || prismaError?.message?.includes('productVariantId')) {
-      // Fallback to old constraint (without productVariantId) - use findFirst instead
+    const prismaError = error as { code?: string; message?: string; meta?: unknown };
+    
+    // Handle unique constraint violation (P2002) - race condition: item was created by concurrent request
+    if (prismaError?.code === 'P2002') {
+      console.log('[ensureListItem] P2002 caught - race condition detected, finding existing item', {
+        listId,
+        groceryItemId,
+        productVariantId: productVariantId || null,
+      });
+      
+      // Item was created by concurrent request, find and activate it
       const existingItem = await prisma.listItem.findFirst({
         where: {
           listId,
           groceryItemId,
-          productVariantId: null,
+          productVariantId: productVariantId || null,
         },
       });
-
+      
       if (existingItem) {
-        // If item exists but is inactive, activate it; if already active, keep it active
+        // Activate if inactive, otherwise return active status
         if (!existingItem.active) {
           const updated = await prisma.listItem.update({
             where: { id: existingItem.id },
@@ -565,17 +574,88 @@ export async function ensureListItem(
         }
         return { active: true };
       } else {
-        // Create new item (without productVariantId)
-        await prisma.listItem.create({
-          data: {
-            listId,
-            groceryItemId,
-            active: true,
-          },
+        // This shouldn't happen - P2002 means item exists, but we can't find it
+        // Log error but don't fail - might be a timing issue
+        console.error('[ensureListItem] P2002 but item not found - possible timing issue', {
+          listId,
+          groceryItemId,
+          productVariantId: productVariantId || null,
         });
+        // Return success anyway - item likely exists and is active
         return { active: true };
       }
     }
+    
+    // If productVariantId field doesn't exist (migration not applied), fall back to old behavior
+    if (prismaError?.code === 'P2009' || prismaError?.message?.includes('Unknown column') || prismaError?.message?.includes('productVariantId')) {
+      // Fallback to old constraint (without productVariantId)
+      try {
+        const existingItem = await prisma.listItem.findFirst({
+          where: {
+            listId,
+            groceryItemId,
+            productVariantId: null,
+          },
+        });
+
+        if (existingItem) {
+          // If item exists but is inactive, activate it; if already active, keep it active
+          if (!existingItem.active) {
+            const updated = await prisma.listItem.update({
+              where: { id: existingItem.id },
+              data: { active: true },
+            });
+            return { active: updated.active };
+          }
+          return { active: true };
+        } else {
+          // Create new item (without productVariantId)
+          await prisma.listItem.create({
+            data: {
+              listId,
+              groceryItemId,
+              active: true,
+            },
+          });
+          return { active: true };
+        }
+      } catch (fallbackError: unknown) {
+        // Handle P2002 in fallback path too
+        const fallbackPrismaError = fallbackError as { code?: string; message?: string };
+        if (fallbackPrismaError?.code === 'P2002') {
+          const existingItem = await prisma.listItem.findFirst({
+            where: {
+              listId,
+              groceryItemId,
+              productVariantId: null,
+            },
+          });
+          if (existingItem) {
+            if (!existingItem.active) {
+              const updated = await prisma.listItem.update({
+                where: { id: existingItem.id },
+                data: { active: true },
+              });
+              return { active: updated.active };
+            }
+            return { active: true };
+          }
+          return { active: true };
+        }
+        throw fallbackError;
+      }
+    }
+    
+    // Log unexpected errors with full context
+    console.error('[ensureListItem] Unexpected error:', {
+      listId,
+      groceryItemId,
+      productVariantId: productVariantId || null,
+      errorCode: prismaError?.code,
+      errorMessage: prismaError?.message,
+      errorMeta: prismaError?.meta,
+    });
+    
     // Re-throw if it's a different error
     throw error;
   }

@@ -410,7 +410,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
     // Always ensure item is added (never removes - scanning should always add items)
     console.log(`[Barcode Scan] Adding item to list: ${productName} (groceryItemId: ${groceryItemId}, variantId: ${variantId})`);
     const result = await ensureListItem(list.id, groceryItemId, variantId);
-    console.log(`[Barcode Scan] Successfully added item to list: ${productName}`);
+    console.log(`[Barcode Scan] Successfully added item to list: ${productName} (active: ${result.active})`);
 
     return NextResponse.json({
       success: true,
@@ -422,7 +422,14 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
       },
     });
   } catch (error) {
-    console.error("Error scanning barcode:", error);
+    const errorDetails = error as { code?: string; message?: string; name?: string };
+    console.error("[Barcode Scan] Error scanning barcode:", {
+      barcode,
+      errorCode: errorDetails?.code,
+      errorMessage: errorDetails?.message,
+      errorName: errorDetails?.name,
+      error,
+    });
     return NextResponse.json(
       { success: false, error: "Failed to process barcode scan", code: "INTERNAL_ERROR" },
       { status: 500 }
