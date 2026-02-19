@@ -291,7 +291,6 @@ model Visitor {
   tapEvents         TapEvent[]
   myLists           MyList[]
   identityClaims    IdentityClaim[] // audit trail of claims
-  dailyStats        DailyVisitorStats[] // aggregated daily visitor stats
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 }
@@ -442,28 +441,4 @@ model DailyItemStats {
 
   @@unique([date, itemKey])
   @@index([itemKey])
-}
-
-// Per-visitor daily stats (for power user scoring)
-model DailyVisitorStats {
-  id             String   @id @default(uuid())
-  date           DateTime @db.Date // date-only semantics
-  visitorId      String
-  visitor        Visitor  @relation(fields: [visitorId], references: [id], onDelete: Cascade)
-  userId         String?  // nullable; filled when visitor is linked to a user
-  taps           Int      @default(0)
-  tagsTapped     Int      @default(0)   // distinct tagId count for that date
-  batchesTapped  Int      @default(0)   // distinct batchId count for that date
-  listsCreated   Int      @default(0)   // if easy to compute; else leave 0 for now
-  itemsAdded     Int      @default(0)   // if easy to compute; else leave 0 for now
-  itemsPurchased Int      @default(0)   // if easy; else 0
-  score          Int      @default(0)
-  isPowerUser    Boolean  @default(false)
-  updatedAt      DateTime @updatedAt
-
-  @@unique([date, visitorId])
-  @@index([date])
-  @@index([visitorId])
-  @@index([userId])
-  @@index([date, score])
 }

@@ -185,13 +185,13 @@ async function aggregateSiteStats(
       where: { occurredAt: dateRange, isDuplicate: false },
     }),
 
-    // Unique visitors by anonVisitorId
+    // Unique visitors by anonVisitorId (filter for non-null values)
     prisma.tapEvent.groupBy({
       by: ["anonVisitorId"],
       where: {
         occurredAt: dateRange,
         isDuplicate: false,
-        anonVisitorId: { isNot: null },
+        anonVisitorId: { not: { equals: null } },
       },
     }),
 
@@ -277,7 +277,7 @@ async function aggregateBatchStats(
         occurredAt: dateRange,
         isDuplicate: false,
         batchId: group.batchId,
-        anonVisitorId: { isNot: null },
+        anonVisitorId: { not: { equals: null } },
       },
     });
 
@@ -336,7 +336,7 @@ async function aggregateTagStats(
         occurredAt: dateRange,
         isDuplicate: false,
         tagId: group.tagId,
-        anonVisitorId: { isNot: null },
+        anonVisitorId: { not: { equals: null } },
       },
     });
 
@@ -547,7 +547,7 @@ async function aggregateVisitorStats(
     where: {
       occurredAt: dateRange,
       isDuplicate: false,
-      visitorId: { isNot: null },
+      visitorId: { not: { equals: null } },
     },
     _count: { id: true },
   });
