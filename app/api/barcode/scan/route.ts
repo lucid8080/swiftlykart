@@ -136,6 +136,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
   try {
     const body = await request.json();
     barcode = body.barcode;
+    const anonVisitorId = body.anonVisitorId || request.headers.get("X-Anon-Visitor-Id");
 
     if (!barcode || typeof barcode !== "string") {
       return NextResponse.json(
@@ -412,6 +413,58 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
     console.log(`[Barcode Scan] Adding item to list: ${productName} (groceryItemId: ${groceryItemId}, variantId: ${variantId})`);
     const result = await ensureListItem(list.id, groceryItemId, variantId);
     console.log(`[Barcode Scan] Successfully added item to list: ${productName} (active: ${result.active})`);
+
+    // Also add to MyList if anonVisitorId is provided (for /list page users)
+    if (anonVisitorId && typeof anonVisitorId === "string") {
+      try {
+        // Find or create visitor
+        const visitor = await prisma.visitor.upsert({
+          where: { anonVisitorId },
+          create: { anonVisitorId },
+          update: { lastSeenAt: new Date() },
+        });
+
+        // Find or create MyList for this visitor
+        let myList = await prisma.myList.findFirst({
+          where: { ownerVisitorId: visitor.id },
+        });
+
+        if (!myList) {
+          myList = await prisma.myList.create({
+            data: {
+              ownerVisitorId: visitor.id,
+            },
+          });
+        }
+
+        // Add item to MyList using product name as itemLabel
+        const itemKey = productName.trim().toLowerCase().replace(/\s+/g, "-");
+        await prisma.myListItem.upsert({
+          where: {
+            listId_itemKey: {
+              listId: myList.id,
+              itemKey,
+            },
+          },
+          create: {
+            listId: myList.id,
+            itemKey,
+            itemLabel: productName.trim(),
+            quantity: 1,
+            lastAddedAt: new Date(),
+          },
+          update: {
+            lastAddedAt: new Date(),
+            quantity: { increment: 1 },
+            purchasedAt: null, // un-purchase if re-added
+          },
+        });
+        console.log(`[Barcode Scan] Also added item to MyList: ${productName}`);
+      } catch (myListError) {
+        // Log but don't fail the request if MyList add fails
+        console.error("[Barcode Scan] Failed to add to MyList:", myListError);
+      }
+    }
 
     return NextResponse.json({
       success: true,

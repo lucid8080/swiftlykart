@@ -58,6 +58,19 @@ function ListPageContent() {
     if (!identified) setIdentified(true);
   }, [identified]);
 
+  // Listen for barcode scan success events and refresh the list
+  useEffect(() => {
+    const handleBarcodeScanSuccess = () => {
+      console.log("[List] Barcode scan detected, refreshing list...");
+      loadItems();
+    };
+
+    window.addEventListener("barcodeScanSuccess", handleBarcodeScanSuccess);
+    return () => {
+      window.removeEventListener("barcodeScanSuccess", handleBarcodeScanSuccess);
+    };
+  }, [loadItems]);
+
   // Load list items
   const loadItems = useCallback(async () => {
     const anonVisitorId = getAnonVisitorId();

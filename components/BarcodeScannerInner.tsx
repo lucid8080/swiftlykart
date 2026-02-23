@@ -217,13 +217,24 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
     setSuccess(null);
 
     try {
+      // Get anonVisitorId from localStorage if available
+      let anonVisitorId: string | null = null;
+      try {
+        anonVisitorId = localStorage.getItem("anonVisitorId");
+      } catch {
+        // localStorage not available, continue without it
+      }
+
       const response = await fetch("/api/barcode/scan", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           ...getDeviceHeaders(),
         },
-        body: JSON.stringify({ barcode }),
+        body: JSON.stringify({ 
+          barcode,
+          ...(anonVisitorId ? { anonVisitorId } : {}),
+        }),
       });
 
       const data = await response.json();
@@ -232,6 +243,13 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
         const productName = data.data?.productName || "Product";
         setSuccess(`Added ${productName} to your list!`);
         setProcessing(false); // Stop showing processing state
+        
+        // Dispatch custom event for /list page to listen to
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("barcodeScanSuccess", {
+            detail: { productName },
+          }));
+        }
         
         // Call onScanSuccess immediately (triggers list refresh in background)
         if (onScanSuccess) {
