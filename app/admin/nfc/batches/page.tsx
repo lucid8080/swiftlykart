@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -11,6 +11,9 @@ import {
   AlertCircle,
   Layers,
   X,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -23,12 +26,16 @@ interface Batch {
   tapCount: number;
   uniqueVisitors: number;
   createdAt: string;
+  lastTappedAt: string | null;
 }
+
+type SortField = "name" | "createdAt" | "lastTappedAt" | "tapCount" | "tagCount";
+type SortDirection = "asc" | "desc";
 
 export default function BatchesPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
-  const [batches, setBatches] = useState<Batch[]>([]);
+  const [rawBatches, setRawBatches] = useState<Batch[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -36,6 +43,8 @@ export default function BatchesPage() {
   const [formName, setFormName] = useState("");
   const [formDesc, setFormDesc] = useState("");
   const [formLoading, setFormLoading] = useState(false);
+  const [sortField, setSortField] = useState<SortField>("createdAt");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
@@ -51,14 +60,69 @@ export default function BatchesPage() {
     try {
       const res = await fetch("/api/admin/batches");
       const data = await res.json();
-      if (data.success) setBatches(data.data);
-      else setError(data.error);
+      if (data.success) {
+        setRawBatches(data.data);
+      } else {
+        setError(data.error);
+      }
     } catch {
       setError("Failed to load batches");
     } finally {
       setIsLoading(false);
     }
   };
+
+  const sortBatches = (batches: Batch[], field: SortField, direction: SortDirection): Batch[] => {
+    const sorted = [...batches].sort((a, b) => {
+      let aVal: any;
+      let bVal: any;
+
+      switch (field) {
+        case "name":
+          aVal = a.name.toLowerCase();
+          bVal = b.name.toLowerCase();
+          break;
+        case "createdAt":
+          aVal = new Date(a.createdAt).getTime();
+          bVal = new Date(b.createdAt).getTime();
+          break;
+        case "lastTappedAt":
+          aVal = a.lastTappedAt ? new Date(a.lastTappedAt).getTime() : 0;
+          bVal = b.lastTappedAt ? new Date(b.lastTappedAt).getTime() : 0;
+          break;
+        case "tapCount":
+          aVal = a.tapCount;
+          bVal = b.tapCount;
+          break;
+        case "tagCount":
+          aVal = a.tagCount;
+          bVal = b.tagCount;
+          break;
+        default:
+          return 0;
+      }
+
+      if (aVal < bVal) return direction === "asc" ? -1 : 1;
+      if (aVal > bVal) return direction === "asc" ? 1 : -1;
+      return 0;
+    });
+
+    return sorted;
+  };
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("desc");
+    }
+  };
+
+  // Sort batches using useMemo to avoid re-sorting on every render
+  const batches = useMemo(() => {
+    return sortBatches(rawBatches, sortField, sortDirection);
+  }, [rawBatches, sortField, sortDirection]);
 
   const handleCreate = async () => {
     if (!formSlug.trim() || !formName.trim()) return;
@@ -142,12 +206,93 @@ export default function BatchesPage() {
           <table className="w-full">
             <thead className="bg-muted/50 text-left">
               <tr>
-                <th className="px-4 py-3 text-sm font-medium">Name</th>
+                <th className="px-4 py-3 text-sm font-medium">
+                  <button
+                    onClick={() => handleSort("name")}
+                    className="flex items-center gap-1 hover:text-primary-500"
+                  >
+                    Name
+                    {sortField === "name" ? (
+                      sortDirection === "asc" ? (
+                        <ArrowUp className="w-3 h-3" />
+                      ) : (
+                        <ArrowDown className="w-3 h-3" />
+                      )
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 opacity-50" />
+                    )}
+                  </button>
+                </th>
                 <th className="px-4 py-3 text-sm font-medium">Slug</th>
-                <th className="px-4 py-3 text-sm font-medium text-right">Tags</th>
-                <th className="px-4 py-3 text-sm font-medium text-right">Taps</th>
+                <th className="px-4 py-3 text-sm font-medium text-right">
+                  <button
+                    onClick={() => handleSort("tagCount")}
+                    className="flex items-center gap-1 hover:text-primary-500 ml-auto"
+                  >
+                    Tags
+                    {sortField === "tagCount" ? (
+                      sortDirection === "asc" ? (
+                        <ArrowUp className="w-3 h-3" />
+                      ) : (
+                        <ArrowDown className="w-3 h-3" />
+                      )
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 opacity-50" />
+                    )}
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-sm font-medium text-right">
+                  <button
+                    onClick={() => handleSort("tapCount")}
+                    className="flex items-center gap-1 hover:text-primary-500 ml-auto"
+                  >
+                    Taps
+                    {sortField === "tapCount" ? (
+                      sortDirection === "asc" ? (
+                        <ArrowUp className="w-3 h-3" />
+                      ) : (
+                        <ArrowDown className="w-3 h-3" />
+                      )
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 opacity-50" />
+                    )}
+                  </button>
+                </th>
                 <th className="px-4 py-3 text-sm font-medium text-right">Visitors</th>
-                <th className="px-4 py-3 text-sm font-medium">Created</th>
+                <th className="px-4 py-3 text-sm font-medium">
+                  <button
+                    onClick={() => handleSort("lastTappedAt")}
+                    className="flex items-center gap-1 hover:text-primary-500"
+                  >
+                    Last Tapped
+                    {sortField === "lastTappedAt" ? (
+                      sortDirection === "asc" ? (
+                        <ArrowUp className="w-3 h-3" />
+                      ) : (
+                        <ArrowDown className="w-3 h-3" />
+                      )
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 opacity-50" />
+                    )}
+                  </button>
+                </th>
+                <th className="px-4 py-3 text-sm font-medium">
+                  <button
+                    onClick={() => handleSort("createdAt")}
+                    className="flex items-center gap-1 hover:text-primary-500"
+                  >
+                    Created
+                    {sortField === "createdAt" ? (
+                      sortDirection === "asc" ? (
+                        <ArrowUp className="w-3 h-3" />
+                      ) : (
+                        <ArrowDown className="w-3 h-3" />
+                      )
+                    ) : (
+                      <ArrowUpDown className="w-3 h-3 opacity-50" />
+                    )}
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -163,13 +308,20 @@ export default function BatchesPage() {
                   <td className="px-4 py-3 text-right font-semibold">{batch.tapCount}</td>
                   <td className="px-4 py-3 text-right">{batch.uniqueVisitors}</td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">
+                    {batch.lastTappedAt ? (
+                      new Date(batch.lastTappedAt).toLocaleDateString()
+                    ) : (
+                      <span className="text-muted-foreground/50">Never</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-muted-foreground">
                     {new Date(batch.createdAt).toLocaleDateString()}
                   </td>
                 </tr>
               ))}
               {batches.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                     No batches yet. Click &quot;New Batch&quot; to create one.
                   </td>
                 </tr>

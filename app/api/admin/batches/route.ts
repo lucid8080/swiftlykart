@@ -24,7 +24,7 @@ export async function GET() {
       },
     });
 
-    // Get unique visitor counts per batch
+    // Get unique visitor counts and last tapped time per batch
     const batchesWithStats = await Promise.all(
       batches.map(async (batch) => {
         const uniqueVisitors = await prisma.tapEvent.groupBy({
@@ -45,11 +45,19 @@ export async function GET() {
           },
         });
 
+        // Get the most recent tap event for this batch
+        const lastTap = await prisma.tapEvent.findFirst({
+          where: { batchId: batch.id },
+          orderBy: { occurredAt: "desc" },
+          select: { occurredAt: true },
+        });
+
         return {
           ...batch,
           tagCount: batch._count.tags,
           tapCount: batch._count.tapEvents,
           uniqueVisitors: uniqueVisitors.length + uniqueIps.length,
+          lastTappedAt: lastTap?.occurredAt || null,
         };
       })
     );
