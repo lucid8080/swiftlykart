@@ -19,6 +19,7 @@ interface MyListItemData {
   itemKey: string;
   itemLabel: string;
   quantity: number | null;
+  lastAddedAt?: string; // Optional - used for optimistic updates
   timesPurchased: number;
   purchasedAt: string | null;
 }
@@ -117,7 +118,7 @@ function ListPageContent() {
           updated[existingIndex] = {
             ...updated[existingIndex],
             quantity: (updated[existingIndex].quantity || 1) + 1,
-            lastAddedAt: new Date().toISOString(),
+            lastAddedAt: new Date().toISOString(), // Update timestamp
             purchasedAt: null, // un-purchase if re-added
           };
           return updated;

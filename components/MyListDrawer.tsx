@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef, memo } from "react";
 import { X, ShoppingCart, Trash2, ChevronUp, ChevronDown, CheckCircle2 } from "lucide-react";
-import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { getDeviceHeaders } from "@/lib/device-client";
 import type { CategoryWithItems, ListWithItems, PriceRange } from "@/lib/zod";
@@ -46,7 +45,8 @@ function MyListDrawerComponent({
   onClear,
   isToggling,
 }: MyListDrawerProps) {
-  const { data: _session } = useSession();
+  // Session check removed - not needed for MyList drawer
+  // const { data: _session } = useSession();
   const [isOpen, setIsOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
   const [doneShoppingDialogOpen, setDoneShoppingDialogOpen] = useState(false);
