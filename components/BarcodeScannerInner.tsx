@@ -220,11 +220,18 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
     try {
       // Get anonVisitorId using the same utility function as /list page
       // This ensures we create one if it doesn't exist
-      const anonVisitorId = getAnonVisitorId();
-      if (anonVisitorId) {
-        console.log("[Barcode Scanner] Found anonVisitorId, will send to API");
-      } else {
-        console.log("[Barcode Scanner] No anonVisitorId available");
+      // Wrap in try-catch to ensure scanning continues even if this fails
+      let anonVisitorId: string | null = null;
+      try {
+        anonVisitorId = getAnonVisitorId();
+        if (anonVisitorId) {
+          console.log("[Barcode Scanner] Found anonVisitorId, will send to API");
+        } else {
+          console.log("[Barcode Scanner] No anonVisitorId available");
+        }
+      } catch (idError) {
+        // If getting anonVisitorId fails, continue without it
+        console.warn("[Barcode Scanner] Failed to get anonVisitorId, continuing without it:", idError);
       }
 
       const requestBody: { barcode: string; anonVisitorId?: string } = { barcode };
