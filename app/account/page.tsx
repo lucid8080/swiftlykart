@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { useSession, signOut } from "next-auth/react";
 import {
   ArrowLeft,
@@ -380,10 +381,13 @@ export default function AccountPage() {
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-xl bg-primary-100 dark:bg-primary-900 flex items-center justify-center">
               {session.user.image ? (
-                <img
+                <Image
                   src={session.user.image}
                   alt=""
+                  width={48}
+                  height={48}
                   className="w-12 h-12 rounded-lg object-cover"
+                  unoptimized
                 />
               ) : (
                 <User className="w-7 h-7 text-primary-500" />

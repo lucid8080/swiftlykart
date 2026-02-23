@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useRef, useState } from "react";
+import Image from "next/image";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -178,14 +179,17 @@ function ItemTileComponent({
 
       {/* Icon or Product Image */}
       {productImageUrl && isSelected ? (
-        <img
+        <Image
           src={productImageUrl}
           alt={name}
+          width={80}
+          height={80}
           className={cn(
             "w-16 h-16 sm:w-20 sm:h-20 mb-2 rounded-xl object-cover",
             "transition-transform duration-200",
             isSelected && "scale-110"
           )}
+          unoptimized
         />
       ) : (
         <span

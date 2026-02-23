@@ -39,14 +39,14 @@ interface SelectedItem {
 }
 
 function MyListDrawerComponent({
-  selectedIds,
+  selectedIds: _selectedIds,
   categories,
   list,
   onRemove,
   onClear,
   isToggling,
 }: MyListDrawerProps) {
-  const { data: session } = useSession();
+  const { data: _session } = useSession();
   const [isOpen, setIsOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
   const [doneShoppingDialogOpen, setDoneShoppingDialogOpen] = useState(false);

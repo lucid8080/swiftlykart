@@ -6,7 +6,7 @@ export function ServiceWorkerRegister() {
   useEffect(() => {
     if (typeof window !== "undefined" && "serviceWorker" in navigator) {
       // Check for existing registrations first
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
+      navigator.serviceWorker.getRegistrations().then((_registrations) => {
         // Register service worker (will reuse existing if scope matches)
         navigator.serviceWorker
           .register("/sw.js", { updateViaCache: "none" })

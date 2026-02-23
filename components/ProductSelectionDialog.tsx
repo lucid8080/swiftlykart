@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useEffect, useRef, useState, useMemo } from "react";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import type { ProductVariant, Store as StoreType } from "@/lib/zod";
 
@@ -21,10 +22,10 @@ type ViewMode = "store" | "brand" | "type";
 
 function ProductSelectionDialogComponent({
   isOpen,
-  itemId,
+  itemId: _itemId,
   itemName,
   itemIcon,
-  stores,
+  stores: _stores,
   variants,
   isLoading = false,
   onClose,
@@ -412,7 +413,6 @@ function ProductSelectionDialogComponent({
               const isGroup = option.isGroup || option.id.startsWith("group-");
               const isExpanded = expandedGroupId === option.id;
               const hasVariants = option.variants && option.variants.length > 0;
-              const isLast = isLastVisible && !isExpanded;
               // Show divider if not last and not expanded (expanded items will have their own divider after variants)
               const showDivider = !isLastVisible && !isExpanded;
 
@@ -449,10 +449,13 @@ function ProductSelectionDialogComponent({
                   >
                     {/* Icon or Image */}
                     {option.imageUrl ? (
-                      <img
+                      <Image
                         src={option.imageUrl}
                         alt={option.name}
+                        width={40}
+                        height={40}
                         className="w-10 h-10 rounded-lg object-cover shrink-0"
+                        unoptimized
                       />
                     ) : (
                       <span
@@ -568,10 +571,13 @@ function ProductSelectionDialogComponent({
                                   >
                                     {/* Variant Image */}
                                     {variant.imageUrl ? (
-                                      <img
+                                      <Image
                                         src={variant.imageUrl}
                                         alt={variant.name}
+                                        width={40}
+                                        height={40}
                                         className="w-10 h-10 rounded-lg object-cover shrink-0"
+                                        unoptimized
                                       />
                                     ) : (
                                       <span
@@ -619,10 +625,13 @@ function ProductSelectionDialogComponent({
                             >
                               {/* Variant Image */}
                               {variant.imageUrl ? (
-                                <img
+                                <Image
                                   src={variant.imageUrl}
                                   alt={variant.name}
+                                  width={40}
+                                  height={40}
                                   className="w-10 h-10 rounded-lg object-cover shrink-0"
+                                  unoptimized
                                 />
                               ) : (
                                 <span

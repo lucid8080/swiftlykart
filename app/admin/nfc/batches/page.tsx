@@ -74,8 +74,8 @@ export default function BatchesPage() {
 
   const sortBatches = (batches: Batch[], field: SortField, direction: SortDirection): Batch[] => {
     const sorted = [...batches].sort((a, b) => {
-      let aVal: any;
-      let bVal: any;
+      let aVal: string | number;
+      let bVal: string | number;
 
       switch (field) {
         case "name":

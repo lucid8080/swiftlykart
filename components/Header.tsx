@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useSession } from "next-auth/react";
 import { User, LogIn, ScanLine } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
@@ -26,10 +27,13 @@ export function Header({ onScanClick }: HeaderProps) {
         <div className="flex items-center justify-between">
           {/* Logo / App name */}
           <Link href="/" className="flex items-center gap-2 focus-ring rounded-lg">
-            <img
+            <Image
               src="/logo/swiftlykart-logo2.png"
               alt="SwiftlyKart"
+              width={120}
+              height={32}
               className="h-8 w-auto"
+              unoptimized
             />
             <span className="font-bold text-xl tracking-tight text-foreground">
               SwiftlyKart
@@ -67,10 +71,13 @@ export function Header({ onScanClick }: HeaderProps) {
                 aria-label="Account settings"
               >
                 {session.user.image ? (
-                  <img
+                  <Image
                     src={session.user.image}
                     alt=""
+                    width={32}
+                    height={32}
                     className="w-8 h-8 rounded-lg object-cover"
+                    unoptimized
                   />
                 ) : (
                   <User className="w-5 h-5 text-primary-500" />
