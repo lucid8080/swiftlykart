@@ -1675,3 +1675,566 @@ POWER_USER_SCORE_THRESHOLD="50"  # default 50 if not set
 - ✅ Executive page updated to show "Top Power Users (30d)"
 - ✅ Uses feature flags and remains safe/isolated
 - ✅ No breaking changes to existing flows
+
+---
+
+## My List Performance Issue — Analysis & Planning
+
+### Background and Motivation
+
+Users report that when scanning items from Open Food Facts, it takes a long time to add items to "my list" (the `/list` page). Sometimes they need to refresh multiple times before seeing the item appear. This creates a poor user experience where the scan appears successful but the item doesn't show up immediately.
+
+**Goal**: Identify the root causes of the slow "my list" addition and plan optimizations to make items appear instantly after scanning.
+
+### Key Challenges and Analysis
+
+After analyzing the code flow, I've identified **5 major bottlenecks**:
+
+#### 1. **Sequential Database Operations in Barcode Scan API** (Primary Bottleneck)
+
+**Location**: `app/api/barcode/scan/route.ts` lines 419-477
+
+**Problem**: The MyList addition happens **synchronously** at the end of the barcode scan request, after:
+- Open Food Facts API call (1-10 seconds, with retries)
+- Category/GroceryItem creation/lookup
+- Store creation/lookup
+- ProductVariant creation
+- Regular List item addition (`ensureListItem`)
+
+**Current Flow**:
+```
+1. Scan barcode → POST /api/barcode/scan
+2. Fetch from Open Food Facts (1-10s) ⏱️
+3. Create/find Category (DB query)
+4. Create/find GroceryItem (DB query)
+5. Create/find Stores (multiple DB queries)
+6. Create ProductVariant (DB query)
+7. Add to regular List (DB query)
+8. THEN add to MyList:
+   - Visitor upsert (DB query)
+   - MyList findFirst (DB query)
+   - MyList create if needed (DB query)
+   - MyListItem upsert (DB query)
+9. Return response
+10. Client dispatches barcodeScanSuccess event
+11. /list page calls loadItems() → GET /api/list/my
+12. User sees item (if DB transaction committed)
+```
+
+**Impact**: The MyList addition is **blocked** by the entire Open Food Facts fetch, adding 1-10 seconds of latency before the item appears.
+
+#### 2. **Race Condition: Event Dispatch vs Database Commit**
+
+**Location**: `components/BarcodeScannerInner.tsx` line 260, `app/list/page.tsx` line 95
+
+**Problem**: The `barcodeScanSuccess` event is dispatched **immediately** after the API returns success (line 260), but:
+- The database transaction might not be fully committed yet
+- The `/list` page calls `loadItems()` immediately (line 95)
+- `GET /api/list/my` might execute before the MyList upsert is visible
+
+**Impact**: User sees "Added to list!" but item doesn't appear → requires manual refresh.
+
+#### 3. **No Optimistic UI Update**
+
+**Location**: `app/list/page.tsx` lines 92-102
+
+**Problem**: The `/list` page waits for the `barcodeScanSuccess` event, then makes a **full API call** to refresh. There's no optimistic update that immediately shows the item in the UI.
+
+**Impact**: Even if the DB is fast, there's still a network round-trip delay before the item appears.
+
+#### 4. **Multiple Sequential DB Queries in MyList Addition**
+
+**Location**: `app/api/barcode/scan/route.ts` lines 423-468
+
+**Problem**: The MyList addition performs **4 sequential database queries**:
+1. `visitor.upsert()` (line 423)
+2. `myList.findFirst()` (line 431)
+3. `myList.create()` if not found (line 436)
+4. `myListItem.upsert()` (line 449)
+
+**Impact**: Each query adds ~10-50ms latency, totaling 40-200ms just for MyList operations.
+
+#### 5. **No Caching or Batch Operations**
+
+**Location**: `app/api/list/my/route.ts` GET endpoint
+
+**Problem**: Every `loadItems()` call performs:
+- Visitor upsert
+- Attribution lookups (batch/tag)
+- MyList findFirst with include
+- No caching of recent items
+
+**Impact**: Even after the item is added, refreshing the list is slower than necessary.
+
+### Root Cause Summary
+
+**Primary Issue**: MyList addition is **synchronously blocked** by the Open Food Facts API call (1-10 seconds). The item addition happens at the end of a long request chain.
+
+**Secondary Issues**:
+- Race condition between event dispatch and DB commit
+- No optimistic UI updates
+- Sequential DB queries (could be parallelized or batched)
+- No client-side caching
+
+### High-level Task Breakdown
+
+#### PHASE 1: MOVE MYLIST ADDITION TO BACKGROUND (CRITICAL)
+
+- [ ] **1.1** Refactor `/api/barcode/scan` to return success **immediately** after regular List addition
+  - Move MyList addition to a **fire-and-forget** background operation
+  - Use `Promise.all()` or `setImmediate()` to run MyList addition asynchronously
+  - Return response with `productName` before MyList is added
+  - Log errors but don't fail the request if MyList add fails
+
+- [ ] **1.2** Add optimistic UI update in `/list` page
+  - When `barcodeScanSuccess` event fires, immediately add item to local state
+  - Show item in UI with a "pending" indicator
+  - Call `loadItems()` in background to sync with server
+  - Remove pending indicator once server confirms
+
+- [ ] **1.3** Add retry mechanism for failed MyList additions
+  - If MyList add fails in background, queue it for retry
+  - Use `localStorage` to track pending items
+  - Retry on next page load or after delay
+
+#### PHASE 2: OPTIMIZE DATABASE OPERATIONS
+
+- [ ] **2.1** Parallelize MyList DB queries
+  - Use `Promise.all()` to run `visitor.upsert()` and attribution lookups in parallel
+  - Combine `myList.findFirst()` and `myList.create()` into a single upsert operation (if possible)
+  - Or use a transaction to ensure atomicity
+
+- [ ] **2.2** Add database indexes (if missing)
+  - Verify `MyList.ownerVisitorId` is indexed
+  - Verify `MyListItem.listId_itemKey` unique constraint is indexed
+  - Check `Visitor.anonVisitorId` unique index exists
+
+- [ ] **2.3** Optimize `GET /api/list/my` endpoint
+  - Cache attribution lookups (batch/tag) if they're frequently accessed
+  - Consider adding a `lastUpdatedAt` field to MyList for conditional requests
+  - Use `select` to only fetch needed fields
+
+#### PHASE 3: IMPROVE CLIENT-SIDE REFRESH
+
+- [ ] **3.1** Add debouncing to `loadItems()` calls
+  - Prevent multiple rapid refreshes if user scans multiple items quickly
+  - Use a debounce of 300-500ms
+
+- [ ] **3.2** Add polling fallback
+  - If optimistic update doesn't sync after 2-3 seconds, poll `GET /api/list/my` every 1s
+  - Stop polling once item appears or after 10 seconds
+
+- [ ] **3.3** Improve error handling
+  - Show user-friendly error if MyList add fails
+  - Provide "Retry" button to manually refresh
+  - Log errors to console for debugging
+
+#### PHASE 4: TESTING & VALIDATION
+
+- [ ] **4.1** Test rapid scans
+  - Scan 5 items in quick succession
+  - Verify all appear in MyList without refresh
+  - Check for race conditions or duplicate items
+
+- [ ] **4.2** Test slow Open Food Facts API
+  - Simulate slow API response (5-10 seconds)
+  - Verify MyList addition still happens in background
+  - Verify optimistic UI shows item immediately
+
+- [ ] **4.3** Test network failures
+  - Simulate network error during MyList add
+  - Verify retry mechanism works
+  - Verify user sees appropriate error message
+
+### Implementation Details
+
+#### Solution 1: Background MyList Addition (Recommended)
+
+```typescript
+// In app/api/barcode/scan/route.ts, after line 415:
+
+// Add to regular List first (existing code)
+const result = await ensureListItem(list.id, groceryItemId, variantId);
+
+// Return success immediately
+const response = NextResponse.json({
+  success: true,
+  data: {
+    groceryItemId,
+    productVariantId: variantId,
+    active: result.active,
+    productName,
+  },
+});
+
+// Add to MyList in background (fire-and-forget)
+if (anonVisitorId && typeof anonVisitorId === "string") {
+  // Don't await - let it run in background
+  addToMyListInBackground(anonVisitorId, productName, srcBatch, srcTag).catch((err) => {
+    console.error("[Barcode Scan] Background MyList add failed:", err);
+    // Could queue for retry here
+  });
+}
+
+return response;
+
+// Helper function (can be in same file or lib)
+async function addToMyListInBackground(
+  anonVisitorId: string,
+  productName: string,
+  srcBatch?: string,
+  srcTag?: string
+) {
+  try {
+    // Same logic as current MyList addition (lines 423-468)
+    // But extracted to separate function
+  } catch (error) {
+    // Log but don't throw
+    console.error("[MyList Background] Error:", error);
+  }
+}
+```
+
+#### Solution 2: Optimistic UI Update
+
+```typescript
+// In app/list/page.tsx, update handleBarcodeScanSuccess:
+
+const handleBarcodeScanSuccess = (event: CustomEvent) => {
+  const productName = event.detail?.productName || "Item";
+  const itemKey = productName.trim().toLowerCase().replace(/\s+/g, "-");
+  
+  // Optimistically add to local state
+  const optimisticItem: MyListItemData = {
+    id: `temp-${Date.now()}`, // Temporary ID
+    itemKey,
+    itemLabel: productName,
+    quantity: 1,
+    lastAddedAt: new Date().toISOString(),
+    timesPurchased: 0,
+    purchasedAt: null,
+  };
+  
+  setItems((prev) => [optimisticItem, ...prev]);
+  
+  // Refresh from server in background
+  loadItems().then(() => {
+    // Server data will replace optimistic item
+    setItems((prev) => prev.filter((item) => !item.id.startsWith("temp-")));
+  });
+};
+```
+
+### Project Status Board — My List Performance
+
+| Task | Status | Notes |
+|------|--------|-------|
+| 1.1 Move MyList to background | ⏳ Pending | Critical fix - will reduce latency from 1-10s to <100ms |
+| 1.2 Optimistic UI update | ⏳ Pending | Will make items appear instantly |
+| 1.3 Retry mechanism | ⏳ Pending | Handles edge cases |
+| 2.1 Parallelize DB queries | ⏳ Pending | Reduces MyList add time from 40-200ms to 20-100ms |
+| 2.2 Add indexes | ⏳ Pending | Verify existing indexes are optimal |
+| 2.3 Optimize GET endpoint | ⏳ Pending | Faster list refreshes |
+| 3.1 Debounce loadItems | ⏳ Pending | Prevents rapid-fire requests |
+| 3.2 Polling fallback | ⏳ Pending | Handles race conditions |
+| 3.3 Error handling | ⏳ Pending | Better UX on failures |
+| 4.1 Test rapid scans | ⏳ Pending | Validation |
+| 4.2 Test slow API | ⏳ Pending | Validation |
+| 4.3 Test network failures | ⏳ Pending | Validation |
+
+### Expected Performance Improvements
+
+**Before**:
+- Time to see item in MyList: **1-10 seconds** (blocked by Open Food Facts API)
+- User experience: Scan → wait → refresh → see item
+
+**After Phase 1**:
+- Time to see item in MyList: **<100ms** (optimistic UI) or **<500ms** (after background add completes)
+- User experience: Scan → item appears instantly → background sync confirms
+
+**After Phase 2**:
+- MyList add time: **20-100ms** (down from 40-200ms)
+- List refresh time: **50-150ms** (down from 100-300ms)
+
+### Lessons (To Be Added After Implementation)
+
+- MyList addition should not block the barcode scan response
+- Optimistic UI updates provide instant feedback even if backend is slow
+- Background operations need retry mechanisms for reliability
+- Race conditions between event dispatch and DB commits require careful handling
+
+---
+
+## Instant MyList Addition — Product Name First Strategy
+
+### Background and Motivation
+
+Users observe that when scanning items, the product name appears instantly in the scan screen (after Open Food Facts API call), but the item doesn't appear in "my list" until much later. Since the system already knows the product name at that point, we can add it to MyList immediately with just the name, and populate all other data (images, category, variants, etc.) in the background later.
+
+**Goal**: Add product name to MyList **immediately** after it's extracted from Open Food Facts (before category/grocery item creation), making items appear instantly in the list while full product data populates in the background.
+
+### Key Challenges and Analysis
+
+#### Current Flow (Slow):
+```
+1. Scan barcode → POST /api/barcode/scan
+2. Fetch from Open Food Facts (1-10s) ⏱️
+3. Extract productName (line 268) ✅ Name is known here!
+4. Create/find Category (DB query) ⏱️
+5. Create/find GroceryItem (DB query) ⏱️
+6. Create/find Stores (DB queries) ⏱️
+7. Create ProductVariant (DB query) ⏱️
+8. Add to regular List (DB query) ⏱️
+9. THEN add to MyList (lines 419-477) ⏱️
+10. Return response with productName
+11. Scan screen shows "Added {productName} to your list!"
+12. /list page refreshes → item appears
+```
+
+**Total time before item appears**: 1-10 seconds (blocked by Open Food Facts + all DB operations)
+
+#### Proposed Flow (Instant):
+```
+1. Scan barcode → POST /api/barcode/scan
+2. Fetch from Open Food Facts (1-10s) ⏱️
+3. Extract productName (line 268) ✅ Name is known here!
+4. **IMMEDIATELY add to MyList with just name** (NEW - <50ms) ⚡
+5. Return response with productName (don't wait for full DB ops)
+6. Scan screen shows "Added {productName} to your list!"
+7. Item ALREADY appears in MyList! ✅
+8. Background: Continue with category/grocery item creation
+9. Background: Create ProductVariant with images, etc.
+10. Background: Optionally update MyListItem with metadata later (optional)
+```
+
+**Total time before item appears**: <100ms (just MyList upsert)
+
+### Key Insights
+
+1. **Product name is available early**: At line 268, we have `productName` from Open Food Facts, but we don't need category/grocery item/product variant to add to MyList.
+
+2. **MyList only needs name**: The `MyListItem` model only requires:
+   - `listId` (can get/create MyList)
+   - `itemKey` (derived from productName)
+   - `itemLabel` (productName)
+   - `quantity` (default 1)
+   - `lastAddedAt` (now)
+
+3. **Full product data is optional**: Images, category, variants, etc. can be populated later or not at all for MyList (it's just a shopping list, not a product catalog).
+
+4. **Parallel operations**: We can add to MyList immediately, then continue with category/grocery item creation in parallel or background.
+
+### High-level Task Breakdown
+
+#### PHASE 1: EXTRACT MYLIST HELPER FUNCTION
+
+- [ ] **1.1** Create `addToMyListByName()` helper function in `app/api/barcode/scan/route.ts` or `lib/mylist.ts`:
+  - Parameters: `anonVisitorId`, `productName`, `srcBatch?`, `srcTag?`
+  - Logic: Same as current MyList addition (visitor upsert, myList find/create, myListItem upsert)
+  - Returns: `Promise<{ success: boolean, itemId?: string }>`
+  - Handles errors gracefully (logs but doesn't throw)
+
+- [ ] **1.2** Call `addToMyListByName()` immediately after productName extraction (line 268):
+  - Place right after `productName = product.product_name_en || product.product_name || "Unknown Product";`
+  - Before category creation (line 272)
+  - Use `await` to ensure it completes before returning response
+  - Or use fire-and-forget if we want even faster response (but await is safer)
+
+#### PHASE 2: REMOVE DUPLICATE MYLIST ADDITION
+
+- [ ] **2.1** Remove or comment out the existing MyList addition code (lines 417-477):
+  - The item will already be in MyList from the early addition
+  - Keep the code commented for reference, or remove if confident
+
+- [ ] **2.2** Handle edge case: What if early MyList add fails?
+  - Option A: Keep the late MyList addition as fallback (try early, if fails try late)
+  - Option B: Only do early addition, log errors but don't retry (simpler)
+  - Recommendation: Option A for reliability
+
+#### PHASE 3: OPTIONAL — ENRICH MYLIST ITEM LATER
+
+- [ ] **3.1** (Optional) After ProductVariant is created, update MyListItem with metadata:
+  - Store `barcode` or `productVariantId` in a custom field (if schema supports)
+  - Or create a separate `MyListItemMetadata` table
+  - Or just leave it as-is (name is enough for shopping list)
+
+- [ ] **3.2** (Optional) Add image URL to MyListItem if schema supports:
+  - Check if `MyListItem` has an `imageUrl` field
+  - If yes, update it after ProductVariant is created
+  - If no, skip (not critical for shopping list)
+
+#### PHASE 4: CLIENT-SIDE OPTIMISTIC UPDATE
+
+- [ ] **4.1** Update `/list` page to show item immediately when `barcodeScanSuccess` event fires:
+  - Extract `productName` from event detail
+  - Add to local state immediately (optimistic)
+  - Call `loadItems()` in background to sync
+  - This provides instant feedback even if API is slow
+
+- [ ] **4.2** Handle duplicate items:
+  - If item already exists in local state, update quantity instead of adding duplicate
+  - Match by `itemKey` (derived from productName)
+
+#### PHASE 5: TESTING & VALIDATION
+
+- [ ] **5.1** Test instant addition:
+  - Scan item → verify it appears in MyList within <100ms
+  - Verify product name is correct
+  - Verify item appears before scan screen closes
+
+- [ ] **5.2** Test rapid scans:
+  - Scan 5 items quickly
+  - Verify all appear in MyList instantly
+  - Verify no duplicates or race conditions
+
+- [ ] **5.3** Test error handling:
+  - Simulate MyList add failure
+  - Verify fallback to late addition works (if implemented)
+  - Verify user still sees success message
+
+### Implementation Details
+
+#### Solution: Early MyList Addition
+
+```typescript
+// In app/api/barcode/scan/route.ts, after line 268:
+
+// Extract product name (existing code)
+product = offData.product;
+productName = product.product_name_en || product.product_name || "Unknown Product";
+
+// IMMEDIATELY add to MyList with just the name (NEW)
+if (anonVisitorId && typeof anonVisitorId === "string") {
+  try {
+    await addToMyListByName(anonVisitorId, productName, srcBatch, srcTag);
+    console.log(`[Barcode Scan] Instantly added ${productName} to MyList`);
+  } catch (earlyError) {
+    console.error("[Barcode Scan] Early MyList add failed, will retry later:", earlyError);
+    // Will retry in the existing late addition code (lines 419-477)
+  }
+}
+
+// Continue with category/grocery item creation (existing code, lines 270-397)
+const categoryName = mapCategory(product.categories_tags);
+// ... rest of existing code
+```
+
+#### Helper Function
+
+```typescript
+// In app/api/barcode/scan/route.ts or lib/mylist.ts:
+
+async function addToMyListByName(
+  anonVisitorId: string,
+  productName: string,
+  srcBatch?: string,
+  srcTag?: string
+): Promise<{ success: boolean; itemId?: string }> {
+  try {
+    // Find or create visitor
+    const visitor = await prisma.visitor.upsert({
+      where: { anonVisitorId },
+      create: { anonVisitorId },
+      update: { lastSeenAt: new Date() },
+    });
+
+    // Find attribution (can be done in parallel with visitor upsert)
+    let sourceBatchId: string | null = null;
+    let sourceTagId: string | null = null;
+    
+    const [batchResult, tagResult] = await Promise.all([
+      srcBatch ? prisma.tagBatch.findUnique({ where: { slug: srcBatch } }).catch(() => null) : Promise.resolve(null),
+      srcTag ? prisma.nfcTag.findUnique({ where: { publicUuid: srcTag } }).catch(() => null) : Promise.resolve(null),
+    ]);
+    
+    if (batchResult) sourceBatchId = batchResult.id;
+    if (tagResult) sourceTagId = tagResult.id;
+
+    // Find or create MyList
+    let myList = await prisma.myList.findFirst({
+      where: { ownerVisitorId: visitor.id },
+    });
+
+    if (!myList) {
+      myList = await prisma.myList.create({
+        data: {
+          ownerVisitorId: visitor.id,
+          sourceBatchId,
+          sourceTagId,
+        },
+      });
+    }
+
+    // Add item to MyList
+    const itemKey = productName.trim().toLowerCase().replace(/\s+/g, "-");
+    const myListItem = await prisma.myListItem.upsert({
+      where: {
+        listId_itemKey: {
+          listId: myList.id,
+          itemKey,
+        },
+      },
+      create: {
+        listId: myList.id,
+        itemKey,
+        itemLabel: productName.trim(),
+        quantity: 1,
+        lastAddedAt: new Date(),
+        sourceBatchId,
+        sourceTagId,
+      },
+      update: {
+        lastAddedAt: new Date(),
+        quantity: { increment: 1 },
+        purchasedAt: null,
+      },
+    });
+
+    return { success: true, itemId: myListItem.id };
+  } catch (error) {
+    console.error("[addToMyListByName] Error:", error);
+    return { success: false };
+  }
+}
+```
+
+### Project Status Board — Instant MyList Addition
+
+| Task | Status | Notes |
+|------|--------|-------|
+| 1.1 Extract MyList helper function | ⏳ Pending | Create reusable `addToMyListByName()` function |
+| 1.2 Call helper immediately after productName | ⏳ Pending | Add at line 268, before category creation |
+| 2.1 Remove duplicate MyList addition | ⏳ Pending | Keep as fallback or remove entirely |
+| 2.2 Handle early add failures | ⏳ Pending | Implement fallback to late addition |
+| 3.1 Optional: Enrich MyListItem later | ⏳ Pending | Add metadata after ProductVariant created |
+| 3.2 Optional: Add image URL | ⏳ Pending | If schema supports it |
+| 4.1 Client optimistic update | ⏳ Pending | Show item immediately in /list page |
+| 4.2 Handle duplicates in UI | ⏳ Pending | Update quantity instead of duplicate |
+| 5.1 Test instant addition | ⏳ Pending | Verify <100ms appearance |
+| 5.2 Test rapid scans | ⏳ Pending | Verify no race conditions |
+| 5.3 Test error handling | ⏳ Pending | Verify fallback works |
+
+### Expected Performance Improvements
+
+**Before**:
+- Time to see item in MyList: **1-10 seconds** (blocked by Open Food Facts + all DB ops)
+- User experience: Scan → wait → see name in scan screen → wait more → refresh → see item
+
+**After**:
+- Time to see item in MyList: **<100ms** (just MyList upsert, no waiting for category/grocery item)
+- User experience: Scan → see name in scan screen → **item already in MyList!** → background: full product data populates
+
+### Key Benefits
+
+1. **Instant appearance**: Item appears in MyList as soon as product name is known
+2. **No blocking**: Full product creation (category, grocery item, variants) happens in background
+3. **Better UX**: User sees item immediately, doesn't need to refresh
+4. **Simple**: MyList only needs name, doesn't need full product catalog data
+5. **Reliable**: Can keep late addition as fallback if early addition fails
+
+### Lessons (To Be Added After Implementation)
+
+- Product name is available early in the flow — use it immediately for MyList
+- MyList is a shopping list, not a product catalog — name is sufficient
+- Early addition + late fallback provides both speed and reliability
+- Parallel operations (visitor upsert + attribution lookup) reduce latency

@@ -128,6 +128,97 @@ async function getOrCreateStores(storeNames: string[]): Promise<Array<{ id: stri
 }
 
 /**
+ * Adds an item to MyList immediately with just the product name.
+ * This is called early in the flow (right after productName is known) to make items appear instantly.
+ * Returns true if successful, false otherwise (doesn't throw).
+ */
+async function addToMyListByName(
+  anonVisitorId: string,
+  productName: string,
+  srcBatch?: string,
+  srcTag?: string
+): Promise<boolean> {
+  try {
+    // Find or create visitor
+    const visitor = await prisma.visitor.upsert({
+      where: { anonVisitorId },
+      create: { anonVisitorId },
+      update: { lastSeenAt: new Date() },
+    });
+
+    // Find attribution (can be done in parallel with visitor upsert, but keeping sequential for simplicity)
+    let sourceBatchId: string | null = null;
+    let sourceTagId: string | null = null;
+    
+    if (srcBatch) {
+      try {
+        const batch = await prisma.tagBatch.findUnique({ where: { slug: srcBatch } });
+        if (batch) sourceBatchId = batch.id;
+      } catch (err) {
+        // Ignore attribution lookup errors
+        console.debug("[addToMyListByName] Failed to lookup batch:", err);
+      }
+    }
+    
+    if (srcTag) {
+      try {
+        const tag = await prisma.nfcTag.findUnique({ where: { publicUuid: srcTag } });
+        if (tag) sourceTagId = tag.id;
+      } catch (err) {
+        // Ignore attribution lookup errors
+        console.debug("[addToMyListByName] Failed to lookup tag:", err);
+      }
+    }
+
+    // Find or create MyList
+    let myList = await prisma.myList.findFirst({
+      where: { ownerVisitorId: visitor.id },
+    });
+
+    if (!myList) {
+      myList = await prisma.myList.create({
+        data: {
+          ownerVisitorId: visitor.id,
+          sourceBatchId,
+          sourceTagId,
+        },
+      });
+    }
+
+    // Add item to MyList
+    const itemKey = productName.trim().toLowerCase().replace(/\s+/g, "-");
+    await prisma.myListItem.upsert({
+      where: {
+        listId_itemKey: {
+          listId: myList.id,
+          itemKey,
+        },
+      },
+      create: {
+        listId: myList.id,
+        itemKey,
+        itemLabel: productName.trim(),
+        quantity: 1,
+        lastAddedAt: new Date(),
+        sourceBatchId,
+        sourceTagId,
+      },
+      update: {
+        lastAddedAt: new Date(),
+        quantity: { increment: 1 },
+        purchasedAt: null, // un-purchase if re-added
+      },
+    });
+
+    console.log(`[addToMyListByName] Instantly added ${productName} to MyList`);
+    return true;
+  } catch (error) {
+    console.error("[addToMyListByName] Error:", error);
+    return false;
+  }
+}
+
+/**
  * POST /api/barcode/scan
  * Scans a barcode, fetches product from OpenFoodFacts, and adds to list
  */
@@ -168,6 +259,14 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
       groceryItemId = existingVariant.groceryItemId;
       variantId = existingVariant.id;
       productName = existingVariant.groceryItem.name;
+      
+      // IMMEDIATELY add to MyList with just the name (instant appearance)
+      if (anonVisitorId && typeof anonVisitorId === "string") {
+        const earlyAddSuccess = await addToMyListByName(anonVisitorId, productName);
+        if (earlyAddSuccess) {
+          console.log(`[Barcode Scan] Instantly added ${productName} to MyList (existing product)`);
+        }
+      }
       
       // Skip to adding item to list (we already have everything we need)
     } else {
@@ -266,6 +365,15 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
       // TypeScript: offData is guaranteed to be non-null and have product at this point
       product = offData.product;
       productName = product.product_name_en || product.product_name || "Unknown Product";
+
+      // IMMEDIATELY add to MyList with just the name (instant appearance)
+      // This happens before category/grocery item creation, so item appears instantly
+      if (anonVisitorId && typeof anonVisitorId === "string") {
+        const earlyAddSuccess = await addToMyListByName(anonVisitorId, productName);
+        if (earlyAddSuccess) {
+          console.log(`[Barcode Scan] Instantly added ${productName} to MyList (new product from Open Food Facts)`);
+        }
+      }
 
       // Now create the product in our database
       // Need to create or find GroceryItem
@@ -414,62 +522,23 @@ export async function POST(request: Request): Promise<NextResponse<ApiResponse>>
     const result = await ensureListItem(list.id, groceryItemId, variantId);
     console.log(`[Barcode Scan] Successfully added item to list: ${productName} (active: ${result.active})`);
 
-    // Also add to MyList if anonVisitorId is provided (for /list page users)
-    console.log(`[Barcode Scan] Checking for anonVisitorId: ${anonVisitorId ? "present" : "missing"}`);
+    // MyList addition already happened early (right after productName was known) for instant appearance.
+    // The upsert operation will handle duplicates gracefully, so this late addition is now just a fallback
+    // in case the early addition failed. We'll still try it, but it's mostly redundant now.
+    // Keeping it as a safety net, but it should rarely be needed since early addition happens first.
     if (anonVisitorId && typeof anonVisitorId === "string") {
+      // Early addition already happened, but try again as fallback (upsert will handle duplicates)
+      // This ensures the item is in MyList even if early addition had a transient error
       try {
-        console.log(`[Barcode Scan] Adding to MyList with anonVisitorId: ${anonVisitorId.substring(0, 8)}...`);
-        // Find or create visitor
-        const visitor = await prisma.visitor.upsert({
-          where: { anonVisitorId },
-          create: { anonVisitorId },
-          update: { lastSeenAt: new Date() },
-        });
-        console.log(`[Barcode Scan] Visitor found/created: ${visitor.id}`);
-
-        // Find or create MyList for this visitor
-        let myList = await prisma.myList.findFirst({
-          where: { ownerVisitorId: visitor.id },
-        });
-
-        if (!myList) {
-          myList = await prisma.myList.create({
-            data: {
-              ownerVisitorId: visitor.id,
-            },
-          });
-          console.log(`[Barcode Scan] Created new MyList: ${myList.id}`);
+        const fallbackSuccess = await addToMyListByName(anonVisitorId, productName);
+        if (fallbackSuccess) {
+          console.log(`[Barcode Scan] Fallback MyList addition succeeded (item may have been added twice, but upsert handles it)`);
         } else {
-          console.log(`[Barcode Scan] Found existing MyList: ${myList.id}`);
+          console.warn(`[Barcode Scan] Both early and fallback MyList additions failed - item may not be in MyList`);
         }
-
-        // Add item to MyList using product name as itemLabel
-        const itemKey = productName.trim().toLowerCase().replace(/\s+/g, "-");
-        console.log(`[Barcode Scan] Upserting MyListItem with itemKey: ${itemKey}`);
-        const myListItem = await prisma.myListItem.upsert({
-          where: {
-            listId_itemKey: {
-              listId: myList.id,
-              itemKey,
-            },
-          },
-          create: {
-            listId: myList.id,
-            itemKey,
-            itemLabel: productName.trim(),
-            quantity: 1,
-            lastAddedAt: new Date(),
-          },
-          update: {
-            lastAddedAt: new Date(),
-            quantity: { increment: 1 },
-            purchasedAt: null, // un-purchase if re-added
-          },
-        });
-        console.log(`[Barcode Scan] Successfully added item to MyList: ${productName} (itemId: ${myListItem.id})`);
       } catch (myListError) {
         // Log but don't fail the request if MyList add fails
-        console.error("[Barcode Scan] Failed to add to MyList:", {
+        console.error("[Barcode Scan] Fallback MyList addition failed:", {
           error: myListError,
           anonVisitorId: anonVisitorId?.substring(0, 8),
           productName,

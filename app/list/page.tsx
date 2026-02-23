@@ -90,9 +90,52 @@ function ListPageContent() {
 
   // Listen for barcode scan success events and refresh the list
   useEffect(() => {
-    const handleBarcodeScanSuccess = () => {
-      console.log("[List] Barcode scan detected, refreshing list...");
-      loadItems();
+    const handleBarcodeScanSuccess = (event: Event) => {
+      const customEvent = event as CustomEvent<{ productName?: string }>;
+      const productName = customEvent.detail?.productName || "Item";
+      
+      console.log("[List] Barcode scan detected, product:", productName);
+      
+      // Optimistically add item to local state immediately (instant feedback)
+      const itemKey = productName.trim().toLowerCase().replace(/\s+/g, "-");
+      const optimisticItem: MyListItemData = {
+        id: `temp-${Date.now()}`, // Temporary ID
+        itemKey,
+        itemLabel: productName,
+        quantity: 1,
+        lastAddedAt: new Date().toISOString(),
+        timesPurchased: 0,
+        purchasedAt: null,
+      };
+      
+      // Check if item already exists (by itemKey) - if so, update quantity instead
+      setItems((prev) => {
+        const existingIndex = prev.findIndex((item) => item.itemKey === itemKey);
+        if (existingIndex >= 0) {
+          // Item exists, update quantity and lastAddedAt
+          const updated = [...prev];
+          updated[existingIndex] = {
+            ...updated[existingIndex],
+            quantity: (updated[existingIndex].quantity || 1) + 1,
+            lastAddedAt: new Date().toISOString(),
+            purchasedAt: null, // un-purchase if re-added
+          };
+          return updated;
+        } else {
+          // New item, add to top of list
+          return [optimisticItem, ...prev];
+        }
+      });
+      
+      // Refresh from server in background to sync with actual data
+      // This will replace the optimistic item with the real one from the database
+      loadItems().then(() => {
+        // Remove any temporary items (server data will have replaced them)
+        setItems((prev) => prev.filter((item) => !item.id.startsWith("temp-")));
+      }).catch((err) => {
+        console.error("[List] Failed to refresh after scan:", err);
+        // Keep optimistic item if refresh fails
+      });
     };
 
     window.addEventListener("barcodeScanSuccess", handleBarcodeScanSuccess);
