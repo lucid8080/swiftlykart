@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { getDeviceHeaders } from "@/lib/device-client";
+import { getAnonVisitorId } from "@/lib/identity-client";
 
 // Type for Html5Qrcode instance
 type Html5QrcodeInstance = {
@@ -217,12 +218,18 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
     setSuccess(null);
 
     try {
-      // Get anonVisitorId from localStorage if available
-      let anonVisitorId: string | null = null;
-      try {
-        anonVisitorId = localStorage.getItem("anonVisitorId");
-      } catch {
-        // localStorage not available, continue without it
+      // Get anonVisitorId using the same utility function as /list page
+      // This ensures we create one if it doesn't exist
+      const anonVisitorId = getAnonVisitorId();
+      if (anonVisitorId) {
+        console.log("[Barcode Scanner] Found anonVisitorId, will send to API");
+      } else {
+        console.log("[Barcode Scanner] No anonVisitorId available");
+      }
+
+      const requestBody: { barcode: string; anonVisitorId?: string } = { barcode };
+      if (anonVisitorId) {
+        requestBody.anonVisitorId = anonVisitorId;
       }
 
       const response = await fetch("/api/barcode/scan", {
@@ -231,10 +238,7 @@ export function BarcodeScannerInner({ isOpen, onClose, onScanSuccess }: BarcodeS
           "Content-Type": "application/json",
           ...getDeviceHeaders(),
         },
-        body: JSON.stringify({ 
-          barcode,
-          ...(anonVisitorId ? { anonVisitorId } : {}),
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
