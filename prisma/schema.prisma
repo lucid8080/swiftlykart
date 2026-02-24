@@ -120,6 +120,7 @@ model GroceryItem {
   categoryId      String
   category        Category         @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   icon            String? // emoji or lucide icon name
+  cuisine         String?          @db.VarChar(64) // optional cuisine filter (e.g., "indian", "jamaican", "mexican")
   isActive        Boolean          @default(true)
   sortOrder       Int              @default(0)
   listItems       ListItem[]

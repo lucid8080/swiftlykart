@@ -18,6 +18,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<CategoryWithItems[
             id: true,
             name: true,
             icon: true,
+            cuisine: true,
             sortOrder: true,
           },
         },

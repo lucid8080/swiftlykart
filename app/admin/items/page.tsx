@@ -20,6 +20,7 @@ import {
   Image as ImageIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CUISINE_REGISTRY } from "@/lib/cuisineRegistry";
 
 interface Category {
   id: string;
@@ -41,6 +42,7 @@ interface GroceryItem {
   id: string;
   name: string;
   icon: string | null;
+  cuisine: string | null;
   isActive: boolean;
   sortOrder: number;
   category: { id: string; name: string };
@@ -233,6 +235,7 @@ export default function AdminItemsPage() {
   const [itemName, setItemName] = useState("");
   const [itemIcon, setItemIcon] = useState("");
   const [itemCategoryId, setItemCategoryId] = useState("");
+  const [itemCuisine, setItemCuisine] = useState<string>("");
   const [formLoading, setFormLoading] = useState(false);
 
   // Check admin access
@@ -363,6 +366,7 @@ export default function AdminItemsPage() {
     setItemName(item?.name || "");
     setItemIcon(item?.icon || "");
     setItemCategoryId(item?.category.id || categories[0]?.id || "");
+    setItemCuisine(item?.cuisine || "");
     setShowItemModal(true);
   };
 
@@ -382,6 +386,7 @@ export default function AdminItemsPage() {
           name: itemName.trim(),
           icon: itemIcon.trim() || null,
           categoryId: itemCategoryId,
+          cuisine: itemCuisine || null,
         }),
       });
 
@@ -1108,6 +1113,23 @@ export default function AdminItemsPage() {
                 {categories.map((cat) => (
                   <option key={cat.id} value={cat.id}>
                     {cat.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={itemCuisine}
+                onChange={(e) => setItemCuisine(e.target.value)}
+                className={cn(
+                  "w-full px-4 py-2.5 rounded-xl",
+                  "bg-muted border-2 border-transparent",
+                  "focus:border-primary-500 focus:bg-card",
+                  "focus-ring"
+                )}
+              >
+                <option value="">No cuisine</option>
+                {CUISINE_REGISTRY.map((cuisine) => (
+                  <option key={cuisine.value} value={cuisine.value}>
+                    {cuisine.label}
                   </option>
                 ))}
               </select>

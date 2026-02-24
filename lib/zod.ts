@@ -75,6 +75,7 @@ export const groceryItemSchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name too long"),
   categoryId: z.string().uuid("Invalid category ID"),
   icon: z.string().max(10).optional(),
+  cuisine: z.string().max(64).optional().nullable(),
   isActive: z.boolean().optional().default(true),
   sortOrder: z.number().int().optional().default(0),
 });
@@ -117,6 +118,7 @@ export interface CategoryWithItems {
     id: string;
     name: string;
     icon: string | null;
+    cuisine: string | null;
     sortOrder: number;
   }[];
 }

@@ -40,6 +40,7 @@ function HomePageContent() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const [selectedCuisine, setSelectedCuisine] = useState<string | null>(null);
   const [pinError, setPinError] = useState<string | null>(null);
   const [resolvingPin, setResolvingPin] = useState(false);
   
@@ -98,7 +99,7 @@ function HomePageContent() {
 
   // NFC tap attribution is now handled globally by TapAttribution in root layout
 
-  // Filter items based on search and category
+  // Filter items based on search, category, and cuisine
   const filteredCategories = useMemo(() => {
     return categories
       .map((category) => {
@@ -107,10 +108,24 @@ function HomePageContent() {
           return null;
         }
 
-        // Filter by search
-        const filteredItems = category.items.filter((item) =>
-          item.name.toLowerCase().includes(searchQuery.toLowerCase())
-        );
+        // Filter by search and cuisine
+        const filteredItems = category.items.filter((item) => {
+          // Cuisine filter: if selectedCuisine exists, item must match (or be null if no chip selected)
+          if (selectedCuisine) {
+            if (item.cuisine !== selectedCuisine) {
+              return false;
+            }
+          }
+          // Items without cuisine should show when no cuisine chip is selected
+          // (no additional filter needed when selectedCuisine is null)
+
+          // Text search filter
+          if (searchQuery) {
+            return item.name.toLowerCase().includes(searchQuery.toLowerCase());
+          }
+
+          return true;
+        });
 
         if (filteredItems.length === 0) return null;
 
@@ -120,7 +135,7 @@ function HomePageContent() {
         };
       })
       .filter(Boolean);
-  }, [categories, activeCategory, searchQuery]);
+  }, [categories, activeCategory, searchQuery, selectedCuisine]);
 
   // Total items for display
   const totalItems = filteredCategories.reduce(
@@ -329,11 +344,12 @@ function HomePageContent() {
         <div className="sticky top-[57px] z-20 bg-background/95 backdrop-blur-sm border-b border-border/50 overflow-x-hidden">
           <div className="max-w-7xl mx-auto px-4 pt-4 pb-2">
             <div className="flex items-center gap-2">
-              <div className="flex-1 lg:flex-none">
+              <div className="flex-1 lg:flex-none" style={{ overflow: 'visible' }}>
                 <SearchInput
                   value={searchQuery}
                   onChange={setSearchQuery}
-                  placeholder="Search groceries..."
+                  selectedCuisine={selectedCuisine}
+                  onCuisineChange={setSelectedCuisine}
                 />
               </div>
               <button
