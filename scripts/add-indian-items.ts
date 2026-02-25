@@ -96,7 +96,7 @@ async function main() {
           sortOrder: newSortOrder,
         },
         include: {
-          items: [],
+          items: true,
         },
       });
       console.log(`📁 Created category: ${categoryName}`);
