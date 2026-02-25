@@ -285,22 +285,18 @@ export function searchCuisineSuggestions(query: string): CuisineDef[] {
     }
 
     // Check aliases
-    let matched = false;
     for (const alias of cuisine.aliases) {
       const aliasLower = alias.toLowerCase();
       if (aliasLower === normalizedQuery) {
         exactMatches.push(cuisine);
-        matched = true;
         break;
       }
       if (aliasLower.startsWith(normalizedQuery)) {
         startsWithMatches.push(cuisine);
-        matched = true;
         break;
       }
       if (aliasLower.includes(normalizedQuery)) {
         includesMatches.push(cuisine);
-        matched = true;
         break;
       }
     }
