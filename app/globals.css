@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @theme {
   --font-sans: "Outfit", system-ui, sans-serif;
@@ -126,9 +127,6 @@
     padding-top: env(safe-area-inset-top, 0px);
   }
 }
-
-/* Google Fonts import */
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 /* PWA standalone mode adjustments */
 @media (display-mode: standalone) {
