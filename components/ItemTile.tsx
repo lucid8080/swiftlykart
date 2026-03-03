@@ -42,6 +42,11 @@ function ItemTileComponent({
     }
     
     if (!isToggling) {
+      // Trigger success haptic feedback
+      // Pattern: 30ms vibration, 60ms pause, 40ms vibration
+      if (navigator.vibrate) {
+        navigator.vibrate([30, 60, 40]);
+      }
       onToggle(id);
     }
   };
